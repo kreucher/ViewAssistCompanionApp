@@ -43,37 +43,96 @@ class WakeWordDownloader(private val context: Context, val config: APPConfig) {
     private val client = OkHttpClient()
 
     companion object {
-        private const val CUSTOM_DIR = "custom"
-        private const val WAKEWORDS_DIR = "wakewords"
+        const val CUSTOM_DIR = "custom"
+        const val WAKEWORDS_DIR = "wakewords"
+        const val SOUNDS_DIR = "sounds"
+        const val ALARMS_DIR = "alarms"
     }
 
     /**
-     * Downloads all files for a specific wake word type and name.
+     * Lists all downloaded wake word names for a specific type.
      */
-    fun downloadWakeWord(wakeWordType: WakeWordType, name: String): Flow<DownloadStatus> = flow {
+    fun listWakeWords(type: WakeWordType): List<String> {
+        val dir = File("${context.filesDir}/$CUSTOM_DIR/$WAKEWORDS_DIR/${type.toString().lowercase()}")
+        if (!dir.exists() || !dir.isDirectory) return emptyList()
+        return dir.listFiles()?.map { it.nameWithoutExtension }?.distinct()?.sorted() ?: emptyList()
+    }
+
+    /**
+     * Lists all files in a custom subdirectory (e.g., sounds or alarms).
+     */
+    fun listCustomFiles(subDir: String): List<String> {
+        val dir = File("${context.filesDir}/$CUSTOM_DIR/$subDir")
+        if (!dir.exists() || !dir.isDirectory) return emptyList()
+        return dir.listFiles()?.map { it.name }?.sorted() ?: emptyList()
+    }
+
+    /**
+     * Deletes all files associated with a wake word.
+     */
+    fun deleteWakeWord(type: WakeWordType, name: String): Boolean {
         val fileNameBase = name.split(".")[0]
-        val files = when(wakeWordType) {
+        val files = when(type) {
             WakeWordType.MICROWAKEWORD -> listOf("$fileNameBase.json", "$fileNameBase.tflite")
             WakeWordType.OPENWAKEWORD -> listOf("$fileNameBase.onnx", "$fileNameBase.tflite")
         }
-
-        val type = wakeWordType.toString().lowercase()
-        val baseUrl = AuthUtils.getHAUrl(config, false)
-        val urlBase = URL(URL(baseUrl), "vaca/$CUSTOM_DIR/$type/")
-
+        var allDeleted = true
         for (file in files) {
+            if (!deleteFile(type, file)) {
+                allDeleted = false
+            }
+        }
+        return allDeleted
+    }
+
+    /**
+     * Deletes a custom file from a specific subdirectory.
+     */
+    fun deleteCustomFile(subDir: String, fileName: String): Boolean {
+        val file = File("${context.filesDir}/$CUSTOM_DIR/$subDir", fileName)
+        return if (file.exists()) file.delete() else false
+    }
+
+    /**
+     * Downloads specific files for a wake word type and name.
+     * If [customExtensions] is provided, only those extensions will be downloaded.
+     */
+    fun downloadWakeWord(wakeWordType: WakeWordType, name: String, customExtensions: List<String>? = null): Flow<DownloadStatus> = flow {
+        val fileNameBase = name.split(".")[0]
+        val extensions = customExtensions ?: when(wakeWordType) {
+            WakeWordType.MICROWAKEWORD -> listOf("json", "tflite")
+            WakeWordType.OPENWAKEWORD -> listOf("onnx", "tflite")
+        }
+
+        val baseUrl = AuthUtils.getHAUrl(config, false)
+        val urlBase = URL(URL(baseUrl), "vaca/$CUSTOM_DIR/${wakeWordType.toString().lowercase()}/")
+
+        for (ext in extensions) {
+            val file = "$fileNameBase.$ext"
             val fileUrl = URL(urlBase, file).toString()
-            downloadFile(type, fileUrl, file).collect { status ->
+            downloadFileGeneric(Path(context.filesDir.absolutePath, CUSTOM_DIR, WAKEWORDS_DIR, wakeWordType.toString().lowercase()), fileUrl, file).collect { status ->
                 emit(status)
             }
         }
     }.flowOn(Dispatchers.IO)
 
     /**
-     * Downloads a single file and emits its status.
+     * Downloads a custom file (sound or alarm).
      */
-    private fun downloadFile(type: String, url: String, fileName: String): Flow<DownloadStatus> = flow {
-        val targetDir = Path(context.filesDir.absolutePath, CUSTOM_DIR, WAKEWORDS_DIR, type)
+    fun downloadCustomFile(subDir: String, fileName: String): Flow<DownloadStatus> = flow {
+        val baseUrl = AuthUtils.getHAUrl(config, false)
+        val fileUrl = URL(URL(baseUrl), "vaca/$CUSTOM_DIR/$subDir/$fileName").toString()
+        val targetDir = Path(context.filesDir.absolutePath, CUSTOM_DIR, subDir)
+        
+        downloadFileGeneric(targetDir, fileUrl, fileName).collect { status ->
+            emit(status)
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * Generic download helper.
+     */
+    private fun downloadFileGeneric(targetDir: java.nio.file.Path, url: String, fileName: String): Flow<DownloadStatus> = flow {
         if (!targetDir.exists()) {
             try {
                 targetDir.createDirectories()
@@ -94,9 +153,8 @@ class WakeWordDownloader(private val context: Context, val config: APPConfig) {
                 }
 
                 val body = response.body
-
-                val contentLength = body.contentLength()
-                body.byteStream().use { input ->
+                val contentLength = body?.contentLength() ?: -1L
+                body?.byteStream()?.use { input ->
                     FileOutputStream(targetFile).use { output ->
                         val buffer = ByteArray(8192)
                         var bytesRead: Int
@@ -118,7 +176,7 @@ class WakeWordDownloader(private val context: Context, val config: APPConfig) {
                 emit(DownloadStatus.Success(fileName, targetFile.toString()))
             }
         } catch (e: IOException) {
-            Timber.e(e, "Error downloading wake word from $url")
+            Timber.e(e, "Error downloading from $url")
             emit(DownloadStatus.Error(fileName, e.message ?: "Unknown I/O error"))
         }
     }
@@ -126,36 +184,23 @@ class WakeWordDownloader(private val context: Context, val config: APPConfig) {
     /**
      * Returns the file for a previously downloaded wake word.
      */
-    fun getDownloadedFile(type: String, fileName: String): File? {
-        val file = File("${context.filesDir}/$CUSTOM_DIR/$WAKEWORDS_DIR/$type", fileName)
+    fun getDownloadedFile(type: WakeWordType, fileName: String): File? {
+        val file = File("${context.filesDir}/$CUSTOM_DIR/$WAKEWORDS_DIR/${
+            type.toString().lowercase()
+        }", fileName)
         return if (file.exists()) file else null
     }
 
-    fun fileExists(type: String, fileName: String): Boolean {
-        val file = File("${context.filesDir}/$CUSTOM_DIR/$WAKEWORDS_DIR/$type", fileName)
+    fun fileExists(type: WakeWordType, fileName: String): Boolean {
+        val file = File("${context.filesDir}/$CUSTOM_DIR/$WAKEWORDS_DIR/${type.toString().lowercase()}", fileName)
         return file.exists()
     }
     
     /**
      * Deletes a downloaded wake word file.
      */
-    fun deleteFile(type: String, fileName: String): Boolean {
+    fun deleteFile(type: WakeWordType, fileName: String): Boolean {
         return getDownloadedFile(type, fileName)?.delete() ?: false
     }
 
-    suspend fun downloadsNeeded(availableWakeWords: JsonElement) {
-        for (wakeWordType in availableWakeWords as JsonObject) {
-            for (wakeWord in wakeWordType.value as JsonObject) {
-                Timber.i("WAKEWORDS: $wakeWord")
-                val wakeWordType = if (wakeWordType.key == "microwakeword") WakeWordType.MICROWAKEWORD else WakeWordType.OPENWAKEWORD
-                val file = "${wakeWord.key}.tflite"
-                if (!fileExists(wakeWordType.toString().lowercase(), file)) {
-                    Timber.i("Download of ${wakeWord.key} needed")
-                    downloadWakeWord(wakeWordType, file).collect { state ->
-                        Timber.d("WAKEWORD DOWNLOAD STATE: $state")
-                    }
-                }
-            }
-        }
-    }
 }

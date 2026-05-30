@@ -8,6 +8,7 @@ import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.device.VolumeManager
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.EventListener
+import com.msp1974.vacompanion.wyoming.WyomingInfoBuilder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -161,6 +162,10 @@ class SatelliteCustomEventHandler(
                         })
                     }
                 )
+            }
+            "updateAvailableWakeWords" -> {
+                val infoBuilder = WyomingInfoBuilder(config, satellite.deviceInfo)
+                satellite.sendEvent("info", infoBuilder.buildInfo())
             }
             else -> consumed = false
         }

@@ -13,12 +13,12 @@ import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.ui.DiagnosticInfo
 import com.msp1974.vacompanion.device.DeviceCapabilitiesData
 import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
-import com.msp1974.vacompanion.device.ScreenUtils
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.Helpers
-import com.msp1974.vacompanion.wakeword.WakeWordDownloader
+import com.msp1974.vacompanion.wakeword.AvailableWakeWords
 import com.msp1974.vacompanion.wakeword.WakeWordEngineProvider
 import com.msp1974.vacompanion.wyoming.SatelliteState
+import com.msp1974.vacompanion.wyoming.WyomingInfoBuilder
 import com.msp1974.vacompanion.wyoming.WyomingPacket
 import io.github.z4kn4fein.semver.toVersion
 import kotlinx.coroutines.CoroutineScope
@@ -63,10 +63,11 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
     private var sensorRunner: Sensors? = null
     var motionTask = Camera(context, config)
 
+    private val customFilesHandler = SatelliteCustomFilesHandler(context, config)
+
     private val eventHandler = SatelliteCustomEventHandler(context, config, scope, this)
 
     private var wakeWordHandler: SatelliteWakeWorkHandler? = null
-    private var wakeWordDownloader = WakeWordDownloader(context, config)
     private var audioPipeline: SatelliteAudioPipeline? = null
     private var audioPipelineId = AtomicInteger(0)
     private var audioPipelineLastStateChange = System.currentTimeMillis()
@@ -106,8 +107,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
             return
         }
 
-        // Not ready for release
-        //wakeWordDownloader.downloadsNeeded(config.customFiles)
+        customWakeWordLoader()
 
         volumeObserver = VolumeObserver(context) { musicVolume, notificationVolume ->
             if (config.musicVolume != musicVolume) {
@@ -152,6 +152,18 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         } catch (e: Exception) {
             Timber.e("Error waiting for settings: ${e.message.toString()}")
             return false
+        }
+    }
+
+    suspend fun customWakeWordLoader() {
+        // Look for custom files
+        if (config.customFiles.toString() != "") {
+            val result = customFilesHandler.downloadCustomWakeWords()
+            if (result) {
+                config.availableWakeWords = AvailableWakeWords(context).get()
+                val infoBuilder = WyomingInfoBuilder(config, deviceInfo)
+                sendEvent("info", infoBuilder.buildInfo())
+            }
         }
     }
 
@@ -500,6 +512,8 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
                     val payload = Json.parseToJsonElement(payloadStr).jsonObject
                     handleAlarmAction(payload["activate"]?.jsonPrimitive?.booleanOrNull ?: false, payload["url"]?.jsonPrimitive?.contentOrNull ?: "")
                 }
+                "open-settings" -> config.eventBroadcaster.notifyEvent(Event("openSettings", "", ""))
+                "update-custom-files" -> Timber.i("Update custom files requested")
             }
         }.onFailure { Timber.e("Failed to handle custom action $action: $it") }
     }

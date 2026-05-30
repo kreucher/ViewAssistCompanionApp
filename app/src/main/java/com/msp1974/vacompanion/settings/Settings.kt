@@ -14,6 +14,8 @@ import com.msp1974.vacompanion.utils.EventNotifier
 import com.msp1974.vacompanion.utils.FirebaseManager
 import com.msp1974.vacompanion.utils.Helpers.Companion.round
 import com.msp1974.vacompanion.utils.Logger
+import com.msp1974.vacompanion.wakeword.AvailableWakeWords
+import com.msp1974.vacompanion.wakeword.AvailableWakeWordsType
 import kotlinx.serialization.json.*
 import java.util.UUID
 import javax.inject.Inject
@@ -83,6 +85,8 @@ class APPConfig @Inject constructor(val context: Context) {
     var hasCameraPermission: Boolean = false
 
     var ignoreSSLErrors: Boolean = alwaysIgnoreSSLErrors
+
+    var availableWakeWords: AvailableWakeWordsType? = null
 
     //In memory settings with change notification
     var useAdvancedGain: Boolean by Delegates.observable(false) { property, oldValue, newValue ->

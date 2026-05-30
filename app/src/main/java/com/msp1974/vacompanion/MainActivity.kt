@@ -1,5 +1,6 @@
 package com.msp1974.vacompanion
 
+import android.Manifest
 import android.Manifest.permission
 import android.annotation.SuppressLint
 import android.app.AlertDialog
@@ -33,6 +34,7 @@ import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.camera.core.ExperimentalMirrorMode
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
@@ -54,6 +56,7 @@ import com.msp1974.vacompanion.ui.VADialog
 import com.msp1974.vacompanion.ui.components.VADialog
 import com.msp1974.vacompanion.ui.layouts.BlackScreen
 import com.msp1974.vacompanion.ui.layouts.ConnectionScreen
+import com.msp1974.vacompanion.ui.layouts.SettingsLayout
 import com.msp1974.vacompanion.ui.layouts.WebViewScreen
 import com.msp1974.vacompanion.ui.theme.AppTheme
 import com.msp1974.vacompanion.utils.AuthUtils
@@ -172,7 +175,19 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                 ) {
                     when {
                         vaUiState.screenBlank -> BlackScreen()
-                        vaUiState.satelliteRunning -> WebViewScreen(webView)
+                        vaUiState.satelliteRunning -> {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                WebViewScreen(webView)
+                                if (vaUiState.showMenu) {
+                                    SettingsLayout(
+                                        viewModel = viewModel,
+                                        onClose = {
+                                            viewModel.setShowMenu(false)
+                                        }
+                                    )
+                                }
+                            }
+                        }
                         else -> ConnectionScreen()
                     }
 
@@ -374,7 +389,12 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                     runUpdateRoutine()
                 }
                 BroadcastSender.REQUEST_MISSING_PERMISSIONS -> {
-                    checkAndRequestPermissions()
+                    val specificPermission = intent.getStringExtra("extra")
+                    if (specificPermission != null) {
+                        requestSpecificPermission(specificPermission)
+                    } else {
+                        checkAndRequestPermissions()
+                    }
                 }
                 BroadcastSender.WEBVIEW_CRASH -> {
                     initWebView()
@@ -418,13 +438,13 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
     }
 
     fun runUpdateRoutine() {
-        if (permissions.hasPermission(permission.WRITE_EXTERNAL_STORAGE) && updateProcessComplete) {
+        try {
             updateProcessComplete = false
             setStatus(getString(R.string.status_checking_for_update))
             lifecycleScope.launch {
                 checkForUpdate()
             }
-        } else {
+        } catch (e: Exception) {
             setStatus(getString(R.string.status_app_update_required, config.minRequiredApkVersion))
         }
     }
@@ -716,6 +736,19 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         Timber.d("Core permissions: $corePermissions")
         Timber.d("Optional permissions: $optionalPermissions")
         viewModel.setPermissionsStatus(corePermissions, optionalPermissions)
+    }
+
+    private fun requestSpecificPermission(permission: String) {
+        val requestID = when (permission) {
+            Manifest.permission.RECORD_AUDIO -> RECORD_AUDIO_PERMISSIONS_REQUEST
+            Manifest.permission.CAMERA -> CAMERA_PERMISSIONS_REQUEST
+            Manifest.permission.POST_NOTIFICATIONS -> NOTIFICATION_PERMISSIONS_REQUEST
+            Manifest.permission.WRITE_EXTERNAL_STORAGE -> WRITE_EXTERNAL_STORAGE_PERMISSIONS_REQUEST
+            else -> 0
+        }
+        if (requestID != 0) {
+            ActivityCompat.requestPermissions(this, arrayOf(permission), requestID)
+        }
     }
 
     private fun checkAndRequestPermissions() {

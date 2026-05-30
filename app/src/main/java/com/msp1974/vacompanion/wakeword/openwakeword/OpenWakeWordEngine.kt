@@ -11,7 +11,13 @@ import com.msp1974.vacompanion.audio.MicrophoneInput
 import com.msp1974.vacompanion.audio.VACAAudioFormat
 import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.settings.APPConfig
+import com.msp1974.vacompanion.wakeword.AvailableWakeWords
+import com.msp1974.vacompanion.wakeword.WakeWordEngine
+import com.msp1974.vacompanion.wakeword.WakeWordEngineModel
 import com.msp1974.vacompanion.wakeword.WakeWordEngineProvider
+import com.msp1974.vacompanion.wakeword.microwakeword.microwakeword.MicroWakeWord
+import com.msp1974.vacompanion.wakeword.microwakeword.microwakeword.MicroWakeWordDetector
+import com.msp1974.vacompanion.wakeword.models.WakeWordWithId
 import com.msp1974.vacompanion.wakeword.openwakeword.audio.AudioProcessor
 import com.msp1974.vacompanion.wakeword.openwakeword.ml.ModelRunner
 import com.msp1974.vacompanion.wakeword.openwakeword.ml.OnnxModelRunner
@@ -20,6 +26,7 @@ import com.msp1974.vacompanion.wakeword.openwakeword.model.WakeWordModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import timber.log.Timber
+import kotlin.collections.plus
 
 
 /**
@@ -29,15 +36,19 @@ import timber.log.Timber
  * It provides real-time audio processing with configurable detection modes and cooldown periods.
  */
 class OpenWakeWordEngine(
-    private val context: Context,
+    val context: Context,
     val config: APPConfig,
-    private val models: List<WakeWordModel>,
+    val engine: WakeWordEngineModel,
+    val activeWakeWords: List<String>,
+    //val activeStopWords: List<String>,
+    val availableWakeWords: List<WakeWordWithId>,
+    //val availableStopWords: List<WakeWordWithId>,
+    muted: Boolean = false,
     private val detectionCooldownMs: Long = 2000L,
-    muted: Boolean = false
 ): WakeWordEngineProvider() {
 
     private val assetManager: AssetManager = context.assets
-    private val modelProcessors = mutableMapOf<WakeWordModel, ModelProcessor>()
+    private val modelProcessors = mutableMapOf<WakeWordWithId, ModelProcessor>()
     private val detectionCooldowns = mutableMapOf<String, Long>()
 
     var isEnabled = true
@@ -87,28 +98,35 @@ class OpenWakeWordEngine(
      */
 
     init {
-        require(models.isNotEmpty()) { "At least one wake word model must be provided" }
+        require(activeWakeWords.isNotEmpty()) { "At least one wake word model must be provided" }
         initializeModels()
     }
 
+    private fun getWakeWord(wakeWord: String): WakeWordWithId? {
+        for (w in availableWakeWords) {
+            if (w.id == wakeWord) return w
+        }
+        return null
+    }
+
     private fun initializeModels() {
-        models.forEach { model ->
-            val processor = ModelProcessor(assetManager, config.wakeWordEngine, model)
-            modelProcessors[model] = processor
+        activeWakeWords.forEach { wakeWordWithId ->
+            getWakeWord(wakeWordWithId)?.let { wakeWord ->
+                val processor = ModelProcessor(engine, wakeWord)
+                modelProcessors[wakeWord] = processor
+            }
         }
     }
 
-    fun addModel(model: WakeWordModel) {
+    fun addModel(wakeWordId: String) {
         /**
         Add model to detections
          */
-        Timber.w("Adding model ${model.name} to engine")
-        modelProcessors.forEach {(wakeWordModel, processor) ->
-            if (wakeWordModel.name == model.name) {
-                throw IllegalArgumentException("Model with name ${model.name} already exists")
-            }
+        Timber.w("Adding model $wakeWordId to engine")
+        getWakeWord(wakeWordId)?.let { wakeWord ->
+            val processor = ModelProcessor(engine, wakeWord)
+            modelProcessors[wakeWord] = processor
         }
-        modelProcessors[model] = ModelProcessor(assetManager, config.wakeWordEngine, model)
     }
 
     fun removeModel(modelName: String) {
@@ -116,10 +134,10 @@ class OpenWakeWordEngine(
         Remove model from detections
          */
         Timber.w("Removing model $modelName from engine")
-        modelProcessors.forEach {(wakeWordModel, processor) ->
-            if (wakeWordModel.name == modelName) {
+        modelProcessors.forEach {(wakeWordWithId, processor) ->
+            if (wakeWordWithId.id == modelName) {
                 processor.close()
-                modelProcessors.remove(wakeWordModel)
+                modelProcessors.remove(wakeWordWithId)
                 return
             }
         }
@@ -145,6 +163,9 @@ class OpenWakeWordEngine(
             val audioSource = if(isEmbedded) VACAAudioFormat.FALLBACK_AUDIO_SOURCE else VACAAudioFormat.DEFAULT_AUDIO_SOURCE
             val microphoneInput = MicrophoneInput(config, audioSource, frameSize = 1280)
             try {
+                // Create detectors here
+
+
                 microphoneInput.start()
                 emit(AudioResult.EngineStatus("Started"))
                 while (true) {
@@ -193,15 +214,15 @@ class OpenWakeWordEngine(
 
         if (isEnabled) {
             val audioFeatures = _audioProcessor.getAudioFeatures(audioBuffer)
-            modelProcessors.map { (model, processor) ->
+            modelProcessors.map { (wakeWordWithId, processor) ->
                 try {
                     val score = processor.process(audioFeatures)
-                    if (score > model.threshold) {
+                    if (score > config.wakeWordThreshold) {
                         detections.add(
                             WakeWordDetection(
-                                model.name,
-                                model.name,
-                                isWakeWordDetected(model, score),
+                                wakeWordWithId.id,
+                                wakeWordWithId.wakeWord.wake_word,
+                                isWakeWordDetected(score),
                                 score,
                                 timestamp = timestamp
                             )
@@ -210,7 +231,7 @@ class OpenWakeWordEngine(
                 } catch (e: RuntimeException) {
                     throw e
                 } catch (e: Exception) {
-                    Timber.e("Error processing model ${model.name} ->$e")
+                    Timber.e("Error processing model ${wakeWordWithId.id} ->$e")
                     e.printStackTrace()
                 }
             }
@@ -218,12 +239,12 @@ class OpenWakeWordEngine(
         return detections
     }
 
-    private fun isWakeWordDetected(model: WakeWordModel, probability: Float): Boolean {
+    private fun isWakeWordDetected(probability: Float): Boolean {
         if (probabilities.size == slidingWindowSize)
             probabilities.removeFirst()
         probabilities.add(probability)
 
-        return probabilities.size == slidingWindowSize && probabilities.average() > model.threshold
+        return probabilities.size == slidingWindowSize && probabilities.average() > config.wakeWordThreshold
     }
 
     fun enable() {
@@ -291,16 +312,15 @@ class OpenWakeWordEngine(
      * Internal class to process audio for a specific model.
      */
     private class ModelProcessor(
-        assetManager: AssetManager,
-        engine: String,
-        model: WakeWordModel
+        engine: WakeWordEngineModel,
+        wakeWord: WakeWordWithId
     ) : AutoCloseable {
 
-        private val modelRunner = getModelRunner(engine, assetManager, model)
+        private val modelRunner = getModelRunner(engine, wakeWord)
 
-        fun getModelRunner(engine: String, assetManager: AssetManager, model: WakeWordModel): ModelRunner {
-            return if (engine == "openwakeword") OnnxModelRunner(assetManager, model)
-            else TfliteModelRunner(assetManager, model)
+        fun getModelRunner(engine: WakeWordEngineModel, wakeWord: WakeWordWithId): ModelRunner {
+            return if (engine == WakeWordEngineModel.OPENWAKEWORD) OnnxModelRunner(wakeWord)
+            else TfliteModelRunner(wakeWord)
         }
 
         fun process(audioFeatures: Array<Array<FloatArray>>): Float {
@@ -311,5 +331,7 @@ class OpenWakeWordEngine(
         override fun close() {
             modelRunner.close()
         }
+
     }
+
 }

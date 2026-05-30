@@ -18,6 +18,10 @@ import com.msp1974.vacompanion.utils.EventListener
 import com.msp1974.vacompanion.utils.Helpers
 import com.msp1974.vacompanion.utils.Permissions
 import com.msp1974.vacompanion.satellite.AudioRouteOption
+import com.msp1974.vacompanion.satellite.SatelliteCustomFilesHandler
+import com.msp1974.vacompanion.wakeword.AvailableWakeWords
+import com.msp1974.vacompanion.wakeword.WakeWordDownloader
+import com.msp1974.vacompanion.wakeword.WakeWordType
 import com.msp1974.vacompanion.utils.Network
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -73,8 +77,18 @@ data class DiagnosticInfo(
 
 
 
+data class CustomFilesState(
+    val microWakeWords: List<String> = emptyList(),
+    val openWakeWords: List<String> = emptyList(),
+    val sounds: List<String> = emptyList(),
+    val alarms: List<String> = emptyList(),
+    val isDownloading: Boolean = false,
+    val downloadName: String = "",
+    val downloadProgress: Int = 0
+)
+
 data class State(
-    val statusMessage: String = "",
+    val statusMessage: String = "Initialising...",
     var orientation: Int = Configuration.ORIENTATION_LANDSCAPE,
 
     var launchOnBoot: Boolean = true,
@@ -89,11 +103,14 @@ data class State(
 
     var showAlertDialog: Boolean = false,
     var alertDialog: VADialog? = null,
+    var showMenu: Boolean = false,
+    var menuOpenedByAction: Boolean = false,
     var permissions: PermissionsStatus = PermissionsStatus(),
     var updates: UpdateStatus = UpdateStatus(),
     var webViewPageLoadingStage: PageLoadingStage = PageLoadingStage.NOT_STARTED,
     var showUUIDChangeDialog: Boolean = false,
-    var isNetworkConnected: Boolean = true
+    var isNetworkConnected: Boolean = true,
+    var customFiles: CustomFilesState = CustomFilesState()
     )
 
 @HiltViewModel
@@ -109,6 +126,7 @@ class VAViewModel @Inject constructor(
     var resources: Resources = application.resources
     var permissions: Permissions = Permissions(application.applicationContext, config)
     val network = Network(application.applicationContext)
+    val wakeWordDownloader = WakeWordDownloader(application, config)
 
     val changedNetworkStatus = networkStatusManager.networkStatus
         .dropWhile { it.status == NetworkStatus.Available }
@@ -199,6 +217,14 @@ class VAViewModel @Inject constructor(
                 }
             }
             "pairedDeviceID" -> buildAppInfo()
+            "openSettings" -> {
+                _vacaState.update { currentState ->
+                    currentState.copy(
+                        showMenu = true,
+                        menuOpenedByAction = true
+                    )
+                }
+            }
             "darkMode" -> {
                 _vacaState.update { currentState ->
                     currentState.copy(
@@ -331,7 +357,7 @@ class VAViewModel @Inject constructor(
                     "Version" to config.version,
                     "IP Address" to (if (Helpers.isNetworkAvailable(config.context)) Helpers.getIpv4HostAddress() else ""),
                     "Port" to APPConfig.SERVER_PORT.toString(),
-                    "UUID" to config.uuid,
+                    "Device ID" to config.uuid,
                     "Paired to" to config.pairedDeviceID,
                 )
            )
@@ -346,6 +372,56 @@ class VAViewModel @Inject constructor(
         BroadcastSender.sendBroadcast(config.context, BroadcastSender.REQUEST_MISSING_PERMISSIONS)
     }
 
+    fun refreshPermissionsStatus() {
+        _vacaState.update { currentState ->
+            currentState.copy(
+                permissions = PermissionsStatus(
+                    hasCorePermissions = permissions.hasCorePermissions(),
+                    hasOptionalPermissions = permissions.hasOptionalPermissions()
+                )
+            )
+        }
+    }
+
+    fun togglePermission(permission: String) {
+        // For runtime permissions, we trigger the system request
+        BroadcastSender.sendBroadcast(config.context, BroadcastSender.REQUEST_MISSING_PERMISSIONS, permission)
+    }
+
+    fun requestWriteSettingsPermission() {
+        val intent = android.content.Intent(
+            android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS,
+            android.net.Uri.parse("package:${config.context.packageName}")
+        ).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        config.context.startActivity(intent)
+    }
+
+    fun requestNotificationPolicyAccess() {
+        val intent = android.content.Intent(
+            android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS
+        ).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        config.context.startActivity(intent)
+    }
+
+    fun requestDeviceAdmin() {
+        val intent = android.content.Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+            putExtra(
+                android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN,
+                android.content.ComponentName(config.context, com.msp1974.vacompanion.VACADeviceAdminReceiver::class.java)
+            )
+            putExtra(
+                android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "Device admin is required to allow the app to lock/blank the screen."
+            )
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        config.context.startActivity(intent)
+    }
+
     fun setPermissionsStatus(core: Boolean, optional: Boolean) {
         _vacaState.update { currentState ->
             currentState.copy(
@@ -354,43 +430,108 @@ class VAViewModel @Inject constructor(
         }
     }
 
-    fun showClearPairedDeviceDialog() {
-        val d = VADialog(
-            title = "Clear Paired Device Entry",
-            message = "This will delete the currently paired Home Assistant server and allow another server to connect and pair to this device.",
-            confirmText = "Confirm",
-            dismissText = "Cancel",
-            confirmCallback = {
-                clearPairedDevice()
-            },
-            dismissCallback = {}
-        )
-        showUpdateDialog(d)
-    }
-
-    private fun clearPairedDevice() {
+    fun clearPairedDevice() {
         config.pairedDeviceID = ""
         config.accessToken = ""
         config.refreshToken = ""
         config.tokenExpiry = 0
     }
 
-    fun showUUIDChangeDialog(show: Boolean = true) {
-        _vacaState.update { currentState ->
-            currentState.copy(
-                showUUIDChangeDialog = show
-            )
-        }
-    }
-
     fun setUUID(uuid: String = "") {
         // TODO: Add validation
         if (uuid != "" && uuid != config.uuid) {
             config.uuid = uuid
-            showUUIDChangeDialog(false)
             clearPairedDevice()
             buildAppInfo()
             config.eventBroadcaster.notifyEvent(Event("restartZeroconf", "", ""))
+        }
+    }
+
+    fun setShowMenu(show: Boolean) {
+        _vacaState.update { currentState ->
+            currentState.copy(
+                showMenu = show,
+                menuOpenedByAction = if (!show) false else currentState.menuOpenedByAction
+            )
+        }
+    }
+
+    fun refreshCustomFiles() {
+        _vacaState.update { currentState ->
+            currentState.copy(
+                customFiles = CustomFilesState(
+                    microWakeWords = wakeWordDownloader.listWakeWords(WakeWordType.MICROWAKEWORD),
+                    openWakeWords = wakeWordDownloader.listWakeWords(WakeWordType.OPENWAKEWORD),
+                    sounds = wakeWordDownloader.listCustomFiles(WakeWordDownloader.SOUNDS_DIR),
+                    alarms = wakeWordDownloader.listCustomFiles(WakeWordDownloader.ALARMS_DIR)
+                )
+            )
+        }
+    }
+
+    fun refreshAvailableWakeWords() {
+        viewModelScope.launch {
+            config.availableWakeWords = AvailableWakeWords(app).get()
+            config.eventBroadcaster.notifyEvent(Event("updateAvailableWakeWords", "", ""))
+        }
+    }
+
+    fun syncCustomFiles() {
+        viewModelScope.launch {
+            val handler = SatelliteCustomFilesHandler(app, config, this@VAViewModel)
+            handler.syncAllCustomFiles()
+            refreshCustomFiles()
+            refreshAvailableWakeWords()
+        }
+    }
+
+    fun deleteWakeWord(type: WakeWordType, name: String) {
+        wakeWordDownloader.deleteWakeWord(type, name)
+        refreshCustomFiles()
+        refreshAvailableWakeWords()
+    }
+
+    fun deleteWakeWords(type: WakeWordType, names: List<String>) {
+        names.forEach { name ->
+            wakeWordDownloader.deleteWakeWord(type, name)
+        }
+        refreshCustomFiles()
+        refreshAvailableWakeWords()
+    }
+
+    fun deleteCustomFile(subDir: String, name: String) {
+        wakeWordDownloader.deleteCustomFile(subDir, name)
+        refreshCustomFiles()
+    }
+
+    fun deleteCustomFiles(subDir: String, names: List<String>) {
+        names.forEach { name ->
+            wakeWordDownloader.deleteCustomFile(subDir, name)
+        }
+        refreshCustomFiles()
+    }
+
+    fun setDownloadProgress(name: String, progress: Int) {
+        _vacaState.update { currentState ->
+            currentState.copy(
+                customFiles = currentState.customFiles.copy(
+                    isDownloading = true,
+                    downloadName = name,
+                    downloadProgress = progress
+                )
+            )
+        }
+    }
+
+    fun clearDownloadProgress() {
+        _vacaState.update { currentState ->
+            currentState.copy(
+                customFiles = currentState.customFiles.copy(
+                    isDownloading = false,
+                    downloadName = "",
+                    downloadProgress = 0
+                )
+            )
         }
     }
 }

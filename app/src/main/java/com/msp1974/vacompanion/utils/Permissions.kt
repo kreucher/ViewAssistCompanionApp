@@ -43,7 +43,10 @@ class Permissions(val context: Context, val config: APPConfig) {
     }
 
     fun hasOptionalPermissions(): Boolean {
-        val permissions = mutableListOf(WRITE_EXTERNAL_STORAGE)
+        val permissions = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(WRITE_EXTERNAL_STORAGE)
+        }
         if (DeviceCapabilitiesManager(context, config).hasFrontCamera()) {
             permissions.add(CAMERA)
         }

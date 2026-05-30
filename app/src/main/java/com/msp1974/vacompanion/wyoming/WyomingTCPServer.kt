@@ -17,10 +17,8 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -56,7 +54,7 @@ abstract class WyomingTCPServer(private val context: Context, val config: APPCon
     private var restartIfStopped: Boolean = false
 
     private var deviceInfo: DeviceCapabilitiesData = DeviceCapabilitiesManager(context, config).getDeviceInfo()
-    private val infoBuilder: WyomingInfoBuilder = WyomingInfoBuilder(context, config, deviceInfo)
+    private val infoBuilder: WyomingInfoBuilder = WyomingInfoBuilder(config, deviceInfo)
 
     var state: ServerState = ServerState.STOPPED
         set(value) {

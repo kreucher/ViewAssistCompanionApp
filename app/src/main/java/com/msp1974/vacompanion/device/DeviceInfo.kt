@@ -138,30 +138,27 @@ class DeviceCapabilitiesManager(val context: Context, val config: APPConfig) {
     }
 
     fun hasFrontCamera(): Boolean {
+        // First try via CameraManager (Standard way for API 21+)
         val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         try {
             for (cameraId in cameraManager.cameraIdList) {
                 val characteristics = cameraManager.getCameraCharacteristics(cameraId)
                 val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
-                if (facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT) {
+                if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
                     return true
                 }
             }
-        } catch (e: CameraAccessException) {
-            // A CameraAccessException here might indicate permissions or
-            // other device-specific issues preventing camera access.
-            // Do not crash the app, but handle gracefully.
-            return false
-        } catch (e: IllegalArgumentException) {
-            // This is crucial. Catches issues like "Illegal argument to HAL module"
-            // if the cameraId or characteristics query is somehow malformed on a specific device.
-            firebase.logException(e)
-            return false
         } catch (e: Exception) {
-            // Catch other unexpected exceptions
-            return false
+            // CameraManager might fail on some restricted or non-standard devices
+            Timber.e(e, "Error checking front camera via CameraManager")
         }
-        return false
+
+        // Fallback: Check via PackageManager features (more robust for some devices)
+        return context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT)
+    }
+
+    fun hasCamera(): Boolean {
+        return context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
     }
 
     fun hasMicrophone(): Boolean {

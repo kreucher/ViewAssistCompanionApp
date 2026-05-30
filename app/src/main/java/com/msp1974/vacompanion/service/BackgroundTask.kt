@@ -3,6 +3,7 @@ package com.msp1974.vacompanion.service
 import android.content.Context
 import com.msp1974.vacompanion.data.NetworkStatusManager
 import com.msp1974.vacompanion.settings.APPConfig
+import com.msp1974.vacompanion.wakeword.AvailableWakeWords
 import com.msp1974.vacompanion.wyoming.ServerState
 import com.msp1974.vacompanion.wyoming.WyomingTCPServer
 import kotlinx.coroutines.CoroutineScope
@@ -55,7 +56,10 @@ internal class BackgroundTaskController (private val context: Context, val confi
         // TODO: Implement a recovery process
         try {
             if (server != null && server?.state == ServerState.STOPPED) {
-                scope.launch { server?.startServer() }
+                scope.launch {
+                    config.availableWakeWords = AvailableWakeWords(context).get()
+                    server?.startServer()
+                }
             } else {
                 Timber.d("Server not setup or already running")
             }
