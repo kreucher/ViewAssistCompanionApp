@@ -6,12 +6,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.ui.VAViewModel
 import com.msp1974.vacompanion.ui.components.MenuLayout
@@ -39,8 +43,21 @@ fun PermissionsLayout(
 ) {
     val vaUiState by viewModel.vacaState.collectAsState()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Refresh permissions status when this screen is shown
+    // Refresh permissions status when this screen is shown or resumed
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshPermissionsStatus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.refreshPermissionsStatus()
     }
@@ -54,7 +71,7 @@ fun PermissionsLayout(
             title = "Record Audio",
             description = "Required for wake word detection and voice commands",
             permission = Manifest.permission.RECORD_AUDIO,
-            isGranted = viewModel.permissions.hasPermission(Manifest.permission.RECORD_AUDIO),
+            isGranted = vaUiState.permissions.recordAudio,
             isCore = true,
             onClick = { viewModel.togglePermission(Manifest.permission.RECORD_AUDIO) }
         )
@@ -66,7 +83,7 @@ fun PermissionsLayout(
                 title = "Post Notifications",
                 description = "Required to show the foreground service notification",
                 permission = Manifest.permission.POST_NOTIFICATIONS,
-                isGranted = viewModel.permissions.hasPermission(Manifest.permission.POST_NOTIFICATIONS),
+                isGranted = vaUiState.permissions.postNotifications,
                 isCore = true,
                 onClick = { viewModel.togglePermission(Manifest.permission.POST_NOTIFICATIONS) }
             )
@@ -80,7 +97,7 @@ fun PermissionsLayout(
                 title = "Camera",
                 description = "Optional: Used for vision features",
                 permission = Manifest.permission.CAMERA,
-                isGranted = viewModel.permissions.hasPermission(Manifest.permission.CAMERA),
+                isGranted = vaUiState.permissions.camera,
                 isCore = false,
                 onClick = { viewModel.togglePermission(Manifest.permission.CAMERA) }
             )
@@ -94,7 +111,7 @@ fun PermissionsLayout(
                 title = "Write External Storage",
                 description = "Optional: Used for auto-updates on older Android versions",
                 permission = Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                isGranted = viewModel.permissions.hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                isGranted = vaUiState.permissions.writeExternalStorage,
                 isCore = false,
                 onClick = { viewModel.togglePermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
             )
@@ -106,7 +123,7 @@ fun PermissionsLayout(
             title = "Modify System Settings",
             description = "Optional: Allows the app to control screen brightness",
             permission = "WRITE_SETTINGS",
-            isGranted = viewModel.permissions.hasWriteSettingsPermission(),
+            isGranted = vaUiState.permissions.writeSettings,
             isCore = false,
             onClick = { viewModel.requestWriteSettingsPermission() }
         )
@@ -117,7 +134,7 @@ fun PermissionsLayout(
             title = "Notification Policy Access",
             description = "Optional: Allows the app to manage Do Not Disturb",
             permission = "NOTIFICATION_POLICY",
-            isGranted = viewModel.permissions.hasNotificationAccessPolicyPermission(),
+            isGranted = vaUiState.permissions.notificationPolicy,
             isCore = false,
             onClick = { viewModel.requestNotificationPolicyAccess() }
         )
@@ -128,7 +145,7 @@ fun PermissionsLayout(
             title = "Device Admin",
             description = "Optional: Allows the app to lock/blank the screen",
             permission = "DEVICE_ADMIN",
-            isGranted = viewModel.permissions.isDeviceAdmin(),
+            isGranted = vaUiState.permissions.deviceAdmin,
             isCore = false,
             onClick = { viewModel.requestDeviceAdmin() }
         )

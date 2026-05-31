@@ -1,14 +1,14 @@
-package com.msp1974.vacompanion.wakeword
+package com.msp1974.vacompanion.utils
 
 import android.content.Context
+import com.msp1974.vacompanion.data.AvailableAlarm
+import com.msp1974.vacompanion.data.AvailableWakeSound
 import com.msp1974.vacompanion.settings.APPConfig
-import com.msp1974.vacompanion.utils.AuthUtils
+import com.msp1974.vacompanion.utils.Helpers.Companion.capitalizeWords
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import timber.log.Timber
@@ -16,6 +16,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.URL
+import java.nio.file.Path
 import kotlin.io.path.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -26,7 +27,7 @@ enum class WakeWordType {
 }
 
 /**
- * Represents the status of a wake word download.
+ * Represents the status of a custom file download.
  */
 sealed class DownloadStatus {
     data class Progress(val fileName: String, val progress: Int) : DownloadStatus()
@@ -35,24 +36,25 @@ sealed class DownloadStatus {
 }
 
 /**
- * Utility class to download wake word models from a URL and store them in the app's internal storage.
+ * Utility class to download custom files (models, sounds, alarms) from a URL 
+ * and store them in the app's internal storage.
  * Emits download status via Flow.
  */
-class WakeWordDownloader(private val context: Context, val config: APPConfig) {
+class CustomFileDownloader(private val context: Context, val config: APPConfig) {
 
     private val client = OkHttpClient()
 
     companion object {
         const val CUSTOM_DIR = "custom"
         const val WAKEWORDS_DIR = "wakewords"
-        const val SOUNDS_DIR = "sounds"
+        const val SOUNDS_DIR = "wakeword_sounds"
         const val ALARMS_DIR = "alarms"
     }
 
     /**
      * Lists all downloaded wake word names for a specific type.
      */
-    fun listWakeWords(type: WakeWordType): List<String> {
+    fun listCustomWakeWordModels(type: WakeWordType): List<String> {
         val dir = File("${context.filesDir}/$CUSTOM_DIR/$WAKEWORDS_DIR/${type.toString().lowercase()}")
         if (!dir.exists() || !dir.isDirectory) return emptyList()
         return dir.listFiles()?.map { it.nameWithoutExtension }?.distinct()?.sorted() ?: emptyList()
@@ -68,9 +70,49 @@ class WakeWordDownloader(private val context: Context, val config: APPConfig) {
     }
 
     /**
-     * Deletes all files associated with a wake word.
+     * Lists all wake sounds in the custom sounds directory.
      */
-    fun deleteWakeWord(type: WakeWordType, name: String): Boolean {
+    fun listAvailableCustomWakeSounds(): List<AvailableWakeSound> {
+        val dir = File("${context.filesDir}/$CUSTOM_DIR/$SOUNDS_DIR")
+        if (!dir.exists() || !dir.isDirectory) return emptyList()
+        return dir.listFiles()?.map { file ->
+            val id = file.nameWithoutExtension
+            AvailableWakeSound(
+                id = id,
+                name = formatDisplayName(id),
+                custom = true,
+                filename = file.name
+            )
+        }?.sortedBy { it.name } ?: emptyList()
+    }
+
+    /**
+     * Lists all alarm sounds in the custom alarms directory.
+     */
+    fun listAvailableCustomAlarms(): List<AvailableAlarm> {
+        val dir = File("${context.filesDir}/$CUSTOM_DIR/$ALARMS_DIR")
+        if (!dir.exists() || !dir.isDirectory) return emptyList()
+        return dir.listFiles()?.map { file ->
+            val id = file.nameWithoutExtension
+            AvailableAlarm(
+                id = id,
+                name = formatDisplayName(id),
+                custom = true,
+                filename = file.name
+            )
+        }?.sortedBy { it.name } ?: emptyList()
+    }
+
+    private fun formatDisplayName(name: String): String {
+        return name.replace("_", " ").lowercase()
+            .replaceFirstChar(Char::titlecaseChar)
+            .capitalizeWords()
+    }
+
+    /**
+     * Deletes all files associated with a wake word model.
+     */
+    fun deleteWakeWordModel(type: WakeWordType, name: String): Boolean {
         val fileNameBase = name.split(".")[0]
         val files = when(type) {
             WakeWordType.MICROWAKEWORD -> listOf("$fileNameBase.json", "$fileNameBase.tflite")
@@ -78,7 +120,7 @@ class WakeWordDownloader(private val context: Context, val config: APPConfig) {
         }
         var allDeleted = true
         for (file in files) {
-            if (!deleteFile(type, file)) {
+            if (!deleteWakeWordFile(type, file)) {
                 allDeleted = false
             }
         }
@@ -94,10 +136,10 @@ class WakeWordDownloader(private val context: Context, val config: APPConfig) {
     }
 
     /**
-     * Downloads specific files for a wake word type and name.
+     * Downloads specific files for a wake word model.
      * If [customExtensions] is provided, only those extensions will be downloaded.
      */
-    fun downloadWakeWord(wakeWordType: WakeWordType, name: String, customExtensions: List<String>? = null): Flow<DownloadStatus> = flow {
+    fun downloadWakeWordModel(wakeWordType: WakeWordType, name: String, customExtensions: List<String>? = null): Flow<DownloadStatus> = flow {
         val fileNameBase = name.split(".")[0]
         val extensions = customExtensions ?: when(wakeWordType) {
             WakeWordType.MICROWAKEWORD -> listOf("json", "tflite")
@@ -132,7 +174,7 @@ class WakeWordDownloader(private val context: Context, val config: APPConfig) {
     /**
      * Generic download helper.
      */
-    private fun downloadFileGeneric(targetDir: java.nio.file.Path, url: String, fileName: String): Flow<DownloadStatus> = flow {
+    private fun downloadFileGeneric(targetDir: Path, url: String, fileName: String): Flow<DownloadStatus> = flow {
         if (!targetDir.exists()) {
             try {
                 targetDir.createDirectories()
@@ -182,16 +224,16 @@ class WakeWordDownloader(private val context: Context, val config: APPConfig) {
     }
 
     /**
-     * Returns the file for a previously downloaded wake word.
+     * Returns the file for a previously downloaded wake word file.
      */
-    fun getDownloadedFile(type: WakeWordType, fileName: String): File? {
+    fun getDownloadedWakeWordFile(type: WakeWordType, fileName: String): File? {
         val file = File("${context.filesDir}/$CUSTOM_DIR/$WAKEWORDS_DIR/${
             type.toString().lowercase()
         }", fileName)
         return if (file.exists()) file else null
     }
 
-    fun fileExists(type: WakeWordType, fileName: String): Boolean {
+    fun wakeWordFileExists(type: WakeWordType, fileName: String): Boolean {
         val file = File("${context.filesDir}/$CUSTOM_DIR/$WAKEWORDS_DIR/${type.toString().lowercase()}", fileName)
         return file.exists()
     }
@@ -199,8 +241,8 @@ class WakeWordDownloader(private val context: Context, val config: APPConfig) {
     /**
      * Deletes a downloaded wake word file.
      */
-    fun deleteFile(type: WakeWordType, fileName: String): Boolean {
-        return getDownloadedFile(type, fileName)?.delete() ?: false
+    fun deleteWakeWordFile(type: WakeWordType, fileName: String): Boolean {
+        return getDownloadedWakeWordFile(type, fileName)?.delete() ?: false
     }
 
 }

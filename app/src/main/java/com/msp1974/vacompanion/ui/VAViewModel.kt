@@ -16,12 +16,16 @@ import com.msp1974.vacompanion.settings.PageLoadingStage
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.EventListener
 import com.msp1974.vacompanion.utils.Helpers
+import com.msp1974.vacompanion.data.AvailableAlarm
+import com.msp1974.vacompanion.data.AvailableAlarms
+import com.msp1974.vacompanion.data.AvailableWakeSound
+import com.msp1974.vacompanion.data.AvailableWakeSounds
 import com.msp1974.vacompanion.utils.Permissions
 import com.msp1974.vacompanion.satellite.AudioRouteOption
 import com.msp1974.vacompanion.satellite.SatelliteCustomFilesHandler
 import com.msp1974.vacompanion.wakeword.AvailableWakeWords
-import com.msp1974.vacompanion.wakeword.WakeWordDownloader
-import com.msp1974.vacompanion.wakeword.WakeWordType
+import com.msp1974.vacompanion.utils.CustomFileDownloader
+import com.msp1974.vacompanion.utils.WakeWordType
 import com.msp1974.vacompanion.utils.Network
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -35,8 +39,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
+import androidx.core.net.toUri
 
-class VADialog(
+  class VADialog(
     val title: String = "AlertDialog",
     val message: String = "Message",
     val confirmText: String = "Yes",
@@ -60,7 +65,14 @@ data class UpdateStatus(
 
 data class PermissionsStatus(
     var hasCorePermissions: Boolean = false,
-    var hasOptionalPermissions: Boolean = false
+    var hasOptionalPermissions: Boolean = false,
+    var recordAudio: Boolean = false,
+    var camera: Boolean = false,
+    var postNotifications: Boolean = false,
+    var writeExternalStorage: Boolean = false,
+    var writeSettings: Boolean = false,
+    var notificationPolicy: Boolean = false,
+    var deviceAdmin: Boolean = false
 )
 
 data class DiagnosticInfo(
@@ -80,8 +92,8 @@ data class DiagnosticInfo(
 data class CustomFilesState(
     val microWakeWords: List<String> = emptyList(),
     val openWakeWords: List<String> = emptyList(),
-    val sounds: List<String> = emptyList(),
-    val alarms: List<String> = emptyList(),
+    val sounds: List<AvailableWakeSound> = emptyList(),
+    val alarms: List<AvailableAlarm> = emptyList(),
     val isDownloading: Boolean = false,
     val downloadName: String = "",
     val downloadProgress: Int = 0
@@ -126,7 +138,7 @@ class VAViewModel @Inject constructor(
     var resources: Resources = application.resources
     var permissions: Permissions = Permissions(application.applicationContext, config)
     val network = Network(application.applicationContext)
-    val wakeWordDownloader = WakeWordDownloader(application, config)
+    val customFileDownloader = CustomFileDownloader(application, config)
 
     val changedNetworkStatus = networkStatusManager.networkStatus
         .dropWhile { it.status == NetworkStatus.Available }
@@ -377,21 +389,46 @@ class VAViewModel @Inject constructor(
             currentState.copy(
                 permissions = PermissionsStatus(
                     hasCorePermissions = permissions.hasCorePermissions(),
-                    hasOptionalPermissions = permissions.hasOptionalPermissions()
+                    hasOptionalPermissions = permissions.hasOptionalPermissions(),
+                    recordAudio = permissions.hasPermission(android.Manifest.permission.RECORD_AUDIO),
+                    camera = permissions.hasPermission(android.Manifest.permission.CAMERA),
+                    postNotifications = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        permissions.hasPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    } else true,
+                    writeExternalStorage = if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+                        permissions.hasPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    } else true,
+                    writeSettings = permissions.hasWriteSettingsPermission(),
+                    notificationPolicy = permissions.hasNotificationAccessPolicyPermission(),
+                    deviceAdmin = permissions.isDeviceAdmin()
                 )
             )
         }
     }
 
     fun togglePermission(permission: String) {
-        // For runtime permissions, we trigger the system request
-        BroadcastSender.sendBroadcast(config.context, BroadcastSender.REQUEST_MISSING_PERMISSIONS, permission)
+        if (this.permissions.hasPermission(permission)) {
+            openAppSettings()
+        } else {
+            // For runtime permissions, we trigger the system request
+            BroadcastSender.sendBroadcast(config.context, BroadcastSender.REQUEST_MISSING_PERMISSIONS, permission)
+        }
+    }
+
+    fun openAppSettings() {
+        val intent = android.content.Intent(
+            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            "package:${config.context.packageName}".toUri()
+        ).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        config.context.startActivity(intent)
     }
 
     fun requestWriteSettingsPermission() {
         val intent = android.content.Intent(
             android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS,
-            android.net.Uri.parse("package:${config.context.packageName}")
+            "package:${config.context.packageName}".toUri()
         ).apply {
             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -423,11 +460,7 @@ class VAViewModel @Inject constructor(
     }
 
     fun setPermissionsStatus(core: Boolean, optional: Boolean) {
-        _vacaState.update { currentState ->
-            currentState.copy(
-                permissions = PermissionsStatus(core, optional)
-            )
-        }
+        refreshPermissionsStatus()
     }
 
     fun clearPairedDevice() {
@@ -457,15 +490,26 @@ class VAViewModel @Inject constructor(
     }
 
     fun refreshCustomFiles() {
-        _vacaState.update { currentState ->
-            currentState.copy(
-                customFiles = CustomFilesState(
-                    microWakeWords = wakeWordDownloader.listWakeWords(WakeWordType.MICROWAKEWORD),
-                    openWakeWords = wakeWordDownloader.listWakeWords(WakeWordType.OPENWAKEWORD),
-                    sounds = wakeWordDownloader.listCustomFiles(WakeWordDownloader.SOUNDS_DIR),
-                    alarms = wakeWordDownloader.listCustomFiles(WakeWordDownloader.ALARMS_DIR)
+        viewModelScope.launch {
+            val wakeSounds = AvailableWakeSounds(app, config).get()
+            val alarms = AvailableAlarms(app, config).get()
+            
+            // Update config for server info (includes assets)
+            config.availableWakeSounds = wakeSounds
+            config.availableAlarms = alarms
+
+            _vacaState.update { currentState ->
+                currentState.copy(
+                    customFiles = CustomFilesState(
+                        microWakeWords = customFileDownloader.listCustomWakeWordModels(WakeWordType.MICROWAKEWORD),
+                        openWakeWords = customFileDownloader.listCustomWakeWordModels(WakeWordType.OPENWAKEWORD),
+                        // For management UI, we only want to show custom files (not assets)
+                        sounds = customFileDownloader.listAvailableCustomWakeSounds(),
+                        alarms = customFileDownloader.listAvailableCustomAlarms()
+                    )
                 )
-            )
+            }
+            config.eventBroadcaster.notifyEvent(Event("updateCustomFiles","",""))
         }
     }
 
@@ -485,28 +529,28 @@ class VAViewModel @Inject constructor(
         }
     }
 
-    fun deleteWakeWord(type: WakeWordType, name: String) {
-        wakeWordDownloader.deleteWakeWord(type, name)
+    fun deleteWakeWordModel(type: WakeWordType, name: String) {
+        customFileDownloader.deleteWakeWordModel(type, name)
         refreshCustomFiles()
         refreshAvailableWakeWords()
     }
 
-    fun deleteWakeWords(type: WakeWordType, names: List<String>) {
+    fun deleteWakeWordModels(type: WakeWordType, names: List<String>) {
         names.forEach { name ->
-            wakeWordDownloader.deleteWakeWord(type, name)
+            customFileDownloader.deleteWakeWordModel(type, name)
         }
         refreshCustomFiles()
         refreshAvailableWakeWords()
     }
 
     fun deleteCustomFile(subDir: String, name: String) {
-        wakeWordDownloader.deleteCustomFile(subDir, name)
+        customFileDownloader.deleteCustomFile(subDir, name)
         refreshCustomFiles()
     }
 
     fun deleteCustomFiles(subDir: String, names: List<String>) {
         names.forEach { name ->
-            wakeWordDownloader.deleteCustomFile(subDir, name)
+            customFileDownloader.deleteCustomFile(subDir, name)
         }
         refreshCustomFiles()
     }

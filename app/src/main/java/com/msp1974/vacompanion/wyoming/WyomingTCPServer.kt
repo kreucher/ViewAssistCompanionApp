@@ -36,11 +36,6 @@ data class Connection(
     val handler: WyomingClientHandler,
 )
 
-data class MessageQueueItem(
-    val clientId: String,
-    val message: WyomingPacket
-)
-
 abstract class WyomingTCPServer(private val context: Context, val config: APPConfig): IEvents {
 
     private val job = SupervisorJob()
@@ -54,7 +49,8 @@ abstract class WyomingTCPServer(private val context: Context, val config: APPCon
     private var restartIfStopped: Boolean = false
 
     private var deviceInfo: DeviceCapabilitiesData = DeviceCapabilitiesManager(context, config).getDeviceInfo()
-    private val infoBuilder: WyomingInfoBuilder = WyomingInfoBuilder(config, deviceInfo)
+    private val infoBuilder: WyomingInfoBuilder = WyomingInfoBuilder(config)
+    private val capabilitiesBuilder: WyomingCapabilitiesBuilder = WyomingCapabilitiesBuilder(config, deviceInfo)
 
     var state: ServerState = ServerState.STOPPED
         set(value) {
@@ -272,16 +268,16 @@ abstract class WyomingTCPServer(private val context: Context, val config: APPCon
         }
     }
 
-    suspend fun sendPong(clientId: String) {
+    fun sendPong(clientId: String) {
         respondToGenericMessage(clientId, "pong", buildJsonObject { put("text", "") })
     }
 
-    suspend fun sendInfo(clientId: String) {
+    fun sendInfo(clientId: String) {
         respondToGenericMessage(clientId, "info", infoBuilder.buildInfo())
     }
 
-    suspend fun sendCapabilities(clientId: String) {
-        respondToGenericMessage(clientId, "capabilities", DeviceCapabilitiesManager.toJson(deviceInfo))
+    fun sendCapabilities(clientId: String) {
+        respondToGenericMessage(clientId, "capabilities", capabilitiesBuilder.buildInfo())
     }
 
     private suspend fun startSatellite(clientId: String) {
@@ -311,7 +307,7 @@ abstract class WyomingTCPServer(private val context: Context, val config: APPCon
                             delay(100)
                         }
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     Timber.w("Satellite taking too long to stop.  Terminating")
                     stopSatellite()
                 }

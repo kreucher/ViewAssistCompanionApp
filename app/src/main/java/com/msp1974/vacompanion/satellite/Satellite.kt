@@ -3,8 +3,11 @@ package com.msp1974.vacompanion.satellite
 import android.annotation.SuppressLint
 import android.content.Context
 import androidx.media3.common.Player
+import androidx.core.net.toUri
 import com.msp1974.vacompanion.R
 import com.msp1974.vacompanion.broadcasts.BroadcastSender
+import com.msp1974.vacompanion.data.AvailableAlarms
+import com.msp1974.vacompanion.data.AvailableWakeSounds
 import com.msp1974.vacompanion.device.Camera
 import com.msp1974.vacompanion.device.SensorUpdatesCallback
 import com.msp1974.vacompanion.device.Sensors
@@ -16,8 +19,10 @@ import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.Helpers
 import com.msp1974.vacompanion.wakeword.AvailableWakeWords
+import com.msp1974.vacompanion.utils.CustomFileDownloader
 import com.msp1974.vacompanion.wakeword.WakeWordEngineProvider
 import com.msp1974.vacompanion.wyoming.SatelliteState
+import com.msp1974.vacompanion.wyoming.WyomingCapabilitiesBuilder
 import com.msp1974.vacompanion.wyoming.WyomingInfoBuilder
 import com.msp1974.vacompanion.wyoming.WyomingPacket
 import io.github.z4kn4fein.semver.toVersion
@@ -73,6 +78,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
     private var audioPipelineLastStateChange = System.currentTimeMillis()
 
     private var soundEffectFinishTime: Long = 0
+    private var currentWakeWordSoundUri: android.net.Uri? = null
 
     var state: SatelliteState = SatelliteState.STOPPED
         set(value) {
@@ -107,7 +113,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
             return
         }
 
-        customWakeWordLoader()
+        customFilesLoader()
 
         volumeObserver = VolumeObserver(context) { musicVolume, notificationVolume ->
             if (config.musicVolume != musicVolume) {
@@ -155,14 +161,24 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         }
     }
 
-    suspend fun customWakeWordLoader() {
+    suspend fun customFilesLoader() {
+        // Refresh available sounds and alarms first so they are available for preloading
+        config.availableWakeSounds = AvailableWakeSounds(context, config).get()
+        config.availableAlarms = AvailableAlarms(context, config).get()
+
         // Look for custom files
         if (config.customFiles.toString() != "") {
-            val result = customFilesHandler.downloadCustomWakeWords()
+            val result = customFilesHandler.downloadAllCustomFiles()
             if (result) {
                 config.availableWakeWords = AvailableWakeWords(context).get()
-                val infoBuilder = WyomingInfoBuilder(config, deviceInfo)
+                // Refresh again after download to include new files
+                config.availableWakeSounds = AvailableWakeSounds(context, config).get()
+                config.availableAlarms = AvailableAlarms(context, config).get()
+
+                val infoBuilder = WyomingInfoBuilder(config)
                 sendEvent("info", infoBuilder.buildInfo())
+
+                sendCapabilities()
             }
         }
     }
@@ -359,13 +375,12 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
     suspend fun playWakeWordDetectionSound() {
         if (config.wakeWordSound != "none") {
             try {
-                mediaManager.soundPlayer.play(
-                    context.resources.getIdentifier(
-                        config.wakeWordSound,
-                        "raw",
-                        context.packageName
-                    )
-                )
+                val soundUri = currentWakeWordSoundUri ?: resolveWakeSoundUri(config.wakeWordSound)
+                
+                if (soundUri != null) {
+                    mediaManager.soundPlayer.play(soundUri)
+                }
+
                 Timber.i("Started wake word sound")
                 scope.launch {
                     while(mediaManager.soundPlayer.state.value != Player.STATE_ENDED) {
@@ -382,16 +397,24 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         }
     }
 
+    private fun resolveWakeSoundUri(id: String): android.net.Uri? {
+        if (id == "none") return null
+        
+        val sound = config.availableWakeSounds.find { it.id == id }
+        if (sound != null) {
+            return if (sound.custom) {
+                java.io.File("${context.filesDir}/${CustomFileDownloader.CUSTOM_DIR}/${CustomFileDownloader.SOUNDS_DIR}", sound.filename).toUri()
+            } else {
+                "asset:///wakeSounds/${sound.filename}".toUri()
+            }
+        }
+        return null
+    }
+
     fun playErrorSound() {
         try {
             scope.launch {
-                mediaManager.soundPlayer.play(
-                    context.resources.getIdentifier(
-                        "error",
-                        "raw",
-                        context.packageName
-                    )
-                )
+                mediaManager.soundPlayer.play("asset:///other/error.mp3".toUri())
             }
         } catch (e: Exception) {
             Timber.e("Error playing error sound: ${e.message.toString()}")
@@ -540,7 +563,21 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
     private suspend fun handleAlarmAction(enable: Boolean, url: String = "") {
         withContext(Dispatchers.Main) {
             if (enable) {
-                mediaManager.alarmPlayer.start(url)
+                // Use provided url/id or fallback to setting
+                val soundId = if (url.isNotBlank()) url else config.alarmSound
+                
+                val alarm = config.availableAlarms.find { it.id == soundId }
+                val mediaUri = if (alarm != null) {
+                    if (alarm.custom) {
+                        java.io.File("${context.filesDir}/${CustomFileDownloader.CUSTOM_DIR}/${CustomFileDownloader.ALARMS_DIR}", alarm.filename).toUri().toString()
+                    } else {
+                        "asset:///alarm/${alarm.filename}"
+                    }
+                } else {
+                    soundId // Fallback to provided string if not found in list
+                }
+
+                mediaManager.alarmPlayer.start(mediaUri)
                 config.eventBroadcaster.notifyEvent(Event("screenWake", "", ""))
             } else {
                 mediaManager.alarmPlayer.stop()
@@ -554,8 +591,13 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         hasInitSettings = true
     }
 
+    fun sendCapabilities() {
+        handleCapabilities(clientId)
+    }
+
     private fun handleCapabilities(clientId: String) {
-        sendSatelliteMessage(clientId, "capabilities", DeviceCapabilitiesManager.toJson(deviceInfo))
+        val capabilitiesBuilder = WyomingCapabilitiesBuilder(config, deviceInfo)
+        sendSatelliteMessage(clientId,"capabilities", capabilitiesBuilder.buildInfo())
     }
 
     // *************************************************************************
@@ -598,15 +640,22 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
     @SuppressLint("DiscouragedApi")
     private suspend fun warmUpAudioResources() {
         withContext(Dispatchers.Main) {
-            mediaManager.soundPlayer.preload(R.raw.error)
+            mediaManager.soundPlayer.preload("asset:///other/error.mp3".toUri())
+
             if (config.wakeWordSound != "none") {
-                val resId = context.resources.getIdentifier(
-                    config.wakeWordSound,
-                    "raw",
-                    context.packageName
-                )
-                if (resId != 0) {
-                    mediaManager.soundPlayer.preload(resId)
+                val newUri = resolveWakeSoundUri(config.wakeWordSound)
+
+                if (newUri != null && newUri != currentWakeWordSoundUri) {
+                    currentWakeWordSoundUri?.let { oldUri ->
+                        mediaManager.soundPlayer.unload(oldUri)
+                    }
+                    mediaManager.soundPlayer.preload(newUri)
+                    currentWakeWordSoundUri = newUri
+                }
+            } else {
+                currentWakeWordSoundUri?.let { oldUri ->
+                    mediaManager.soundPlayer.unload(oldUri)
+                    currentWakeWordSoundUri = null
                 }
             }
         }

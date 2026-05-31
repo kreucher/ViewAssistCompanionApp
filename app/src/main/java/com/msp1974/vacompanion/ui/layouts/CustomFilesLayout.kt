@@ -18,11 +18,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.msp1974.vacompanion.data.AvailableAlarm
+import com.msp1974.vacompanion.data.AvailableWakeSound
 import com.msp1974.vacompanion.ui.VAViewModel
 import com.msp1974.vacompanion.ui.theme.AppTheme
 import com.msp1974.vacompanion.utils.Helpers.Companion.capitalizeWords
-import com.msp1974.vacompanion.wakeword.WakeWordDownloader
-import com.msp1974.vacompanion.wakeword.WakeWordType
+import com.msp1974.vacompanion.utils.CustomFileDownloader
+import com.msp1974.vacompanion.utils.WakeWordType
 
 @Composable
 fun CustomFilesLayout(
@@ -86,7 +88,14 @@ fun CustomFilesLayout(
                     if (selectedFiles.size == files.size) {
                         selectedFiles = emptySet()
                     } else {
-                        selectedFiles = files.toSet()
+                        selectedFiles = files.map {
+                            when (it) {
+                                is AvailableWakeSound -> it.filename
+                                is AvailableAlarm -> it.filename
+                                is String -> it
+                                else -> ""
+                            }
+                        }.toSet()
                     }
                 }) {
                     Icon(Icons.Default.SelectAll, contentDescription = "Select All")
@@ -95,9 +104,9 @@ fun CustomFilesLayout(
                     onClick = {
                         if (selectedTab == 0) {
                             val type = if (selectedEngineTab == 0) WakeWordType.MICROWAKEWORD else WakeWordType.OPENWAKEWORD
-                            viewModel.deleteWakeWords(type, selectedFiles.toList())
+                            viewModel.deleteWakeWordModels(type, selectedFiles.toList())
                         } else {
-                            val subDir = if (selectedTab == 1) WakeWordDownloader.SOUNDS_DIR else WakeWordDownloader.ALARMS_DIR
+                            val subDir = if (selectedTab == 1) CustomFileDownloader.SOUNDS_DIR else CustomFileDownloader.ALARMS_DIR
                             viewModel.deleteCustomFiles(subDir, selectedFiles.toList())
                         }
                         selectionMode = false
@@ -167,27 +176,34 @@ fun CustomFilesLayout(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
-            items(files) { name ->
-                val isSelected = selectedFiles.contains(name)
+            items(files) { item ->
+                val (id, displayName) = when (item) {
+                    is AvailableWakeSound -> item.filename to item.name
+                    is AvailableAlarm -> item.filename to item.name
+                    is String -> item to item.replace("_", " ").capitalizeWords()
+                    else -> "" to ""
+                }
+                
+                val isSelected = selectedFiles.contains(id)
                 FileListItem(
-                    name = name,
+                    name = displayName,
                     isSelected = isSelected,
                     selectionMode = selectionMode,
                     onToggleSelection = {
                         if (!selectionMode) selectionMode = true
                         selectedFiles = if (isSelected) {
-                            selectedFiles - name
+                            selectedFiles - id
                         } else {
-                            selectedFiles + name
+                            selectedFiles + id
                         }
                     },
                     onDelete = {
                         if (selectedTab == 0) {
                             val type = if (selectedEngineTab == 0) WakeWordType.MICROWAKEWORD else WakeWordType.OPENWAKEWORD
-                            viewModel.deleteWakeWord(type, name)
+                            viewModel.deleteWakeWordModel(type, id)
                         } else {
-                            val subDir = if (selectedTab == 1) WakeWordDownloader.SOUNDS_DIR else WakeWordDownloader.ALARMS_DIR
-                            viewModel.deleteCustomFile(subDir, name)
+                            val subDir = if (selectedTab == 1) CustomFileDownloader.SOUNDS_DIR else CustomFileDownloader.ALARMS_DIR
+                            viewModel.deleteCustomFile(subDir, id)
                         }
                     }
                 )
@@ -242,7 +258,7 @@ fun FileListItem(
             }
             
             Text(
-                text = name.replace("_", " ").capitalizeWords(),
+                text = name, // Use raw ID/name as provided
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
@@ -316,7 +332,7 @@ fun CustomFilesLayoutPreview() {
             ) {
                 items(listOf("hey_jarvis", "alexa", "ok_google")) { name ->
                     FileListItem(
-                        name = name,
+                        name = name.replace("_", " ").capitalizeWords(),
                         isSelected = name == "alexa",
                         selectionMode = true,
                         onToggleSelection = {},

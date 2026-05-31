@@ -1,9 +1,12 @@
 package com.msp1974.vacompanion.service
 
 import android.content.Context
+import com.msp1974.vacompanion.data.AvailableAlarms
+import com.msp1974.vacompanion.data.AvailableWakeSounds
 import com.msp1974.vacompanion.data.NetworkStatusManager
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.wakeword.AvailableWakeWords
+import com.msp1974.vacompanion.utils.CustomFileDownloader
 import com.msp1974.vacompanion.wyoming.ServerState
 import com.msp1974.vacompanion.wyoming.WyomingTCPServer
 import kotlinx.coroutines.CoroutineScope
@@ -58,6 +61,8 @@ internal class BackgroundTaskController (private val context: Context, val confi
             if (server != null && server?.state == ServerState.STOPPED) {
                 scope.launch {
                     config.availableWakeWords = AvailableWakeWords(context).get()
+                    config.availableAlarms = AvailableAlarms(context, config).get()
+                    config.availableWakeSounds = AvailableWakeSounds(context, config).get()
                     server?.startServer()
                 }
             } else {

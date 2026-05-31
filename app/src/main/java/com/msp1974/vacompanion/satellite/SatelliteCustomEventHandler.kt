@@ -2,12 +2,12 @@ package com.msp1974.vacompanion.satellite
 
 import android.content.Context
 import android.media.AudioManager
-import com.msp1974.vacompanion.R
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.device.VolumeManager
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.EventListener
+import com.msp1974.vacompanion.wyoming.WyomingCapabilitiesBuilder
 import com.msp1974.vacompanion.wyoming.WyomingInfoBuilder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -94,13 +94,7 @@ class SatelliteCustomEventHandler(
                 }
 
                 if (config.wakeWordSound != "none") {
-                    try {
-                        scope.launch {
-                            satellite.mediaManager.soundPlayer.play(R.raw.error)
-                        }
-                    } catch (e: Exception) {
-                        Timber.e("Error playing wake word sound: ${e.message.toString()}")
-                    }
+                    satellite.playErrorSound()
                 }
                 //audioRoute = AudioRouteOption.DETECT
                 satellite.sendDiagnostics(0f, 0f)
@@ -164,8 +158,11 @@ class SatelliteCustomEventHandler(
                 )
             }
             "updateAvailableWakeWords" -> {
-                val infoBuilder = WyomingInfoBuilder(config, satellite.deviceInfo)
+                val infoBuilder = WyomingInfoBuilder(config)
                 satellite.sendEvent("info", infoBuilder.buildInfo())
+            }
+            "updateCustomFiles" -> {
+                satellite.sendCapabilities()
             }
             else -> consumed = false
         }

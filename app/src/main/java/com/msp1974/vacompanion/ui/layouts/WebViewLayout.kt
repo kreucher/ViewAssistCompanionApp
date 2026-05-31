@@ -46,9 +46,10 @@ fun WebViewScreen (webView: CustomWebView, vaViewModel: VAViewModel = viewModel(
         }
 
         Box(modifier = modifier) {
-            WebView(webView, swipeRefreshEnabled = vaViewModel.config!!.swipeRefresh)
+            WebView(webView, swipeRefreshEnabled = vaViewModel.config.swipeRefresh)
         }
 
+        //TODO: Re-enable when have method for detecting full page render finished
         if (vaUiState.webViewPageLoadingStage != PageLoadingStage.LOADED && false) {
             Box(
                 modifier = Modifier

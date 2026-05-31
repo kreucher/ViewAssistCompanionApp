@@ -9,12 +9,13 @@ import android.provider.Settings.Secure
 import androidx.preference.PreferenceManager
 import androidx.core.content.edit
 import com.google.android.gms.common.util.ClientLibraryUtils.getPackageInfo
+import com.msp1974.vacompanion.data.AvailableAlarm
+import com.msp1974.vacompanion.data.AvailableWakeSound
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.EventNotifier
 import com.msp1974.vacompanion.utils.FirebaseManager
 import com.msp1974.vacompanion.utils.Helpers.Companion.round
 import com.msp1974.vacompanion.utils.Logger
-import com.msp1974.vacompanion.wakeword.AvailableWakeWords
 import com.msp1974.vacompanion.wakeword.AvailableWakeWordsType
 import kotlinx.serialization.json.*
 import java.util.UUID
@@ -87,6 +88,8 @@ class APPConfig @Inject constructor(val context: Context) {
     var ignoreSSLErrors: Boolean = alwaysIgnoreSSLErrors
 
     var availableWakeWords: AvailableWakeWordsType? = null
+    var availableWakeSounds: List<AvailableWakeSound> = emptyList()
+    var availableAlarms: List<AvailableAlarm> = emptyList()
 
     //In memory settings with change notification
     var useAdvancedGain: Boolean by Delegates.observable(false) { property, oldValue, newValue ->
@@ -102,6 +105,10 @@ class APPConfig @Inject constructor(val context: Context) {
     }
 
     var wakeWordSound: String by Delegates.observable(DEFAULT_WAKE_WORD_SOUND) { property, oldValue, newValue ->
+        onValueChangedListener(property, oldValue, newValue)
+    }
+
+    var alarmSound: String by Delegates.observable(DEFAULT_ALARM_SOUND) { property, oldValue, newValue ->
         onValueChangedListener(property, oldValue, newValue)
     }
 
@@ -298,6 +305,7 @@ class APPConfig @Inject constructor(val context: Context) {
         settings["wake_word_engine"]?.jsonPrimitive?.contentOrNull?.let { wakeWordEngine = it }
         settings["wake_word"]?.jsonPrimitive?.contentOrNull?.let { wakeWord = it }
         settings["wake_word_sound"]?.jsonPrimitive?.contentOrNull?.let { wakeWordSound = it }
+        settings["alarm_sound"]?.jsonPrimitive?.contentOrNull?.let { alarmSound = it }
         settings["wake_word_threshold"]?.jsonPrimitive?.floatOrNull?.let { wakeWordThreshold = (it / 10).round(2) }
         settings["raw_proximity_threshold"]?.jsonPrimitive?.intOrNull?.let { rawProximitySensorThreshold = it }
         settings["notification_volume"]?.jsonPrimitive?.floatOrNull?.let { notificationVolume = it.toInt() }
@@ -374,6 +382,7 @@ class APPConfig @Inject constructor(val context: Context) {
         const val DEFAULT_RAW_PROXIMITY_THRESHOLD = 300
         const val DEFAULT_WAKE_WORD = "hey_jarvis"
         const val DEFAULT_WAKE_WORD_SOUND = "none"
+        const val DEFAULT_ALARM_SOUND = "alarm_sound"
         const val DEFAULT_WAKE_WORD_THRESHOLD = 0.6f
         const val DEFAULT_NOTIFICATION_VOLUME = 10
         const val DEFAULT_MUSIC_VOLUME = 10

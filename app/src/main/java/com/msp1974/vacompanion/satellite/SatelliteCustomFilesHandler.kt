@@ -4,9 +4,9 @@ import android.content.Context
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.ui.VAViewModel
 import com.msp1974.vacompanion.utils.Helpers.Companion.capitalizeWords
-import com.msp1974.vacompanion.wakeword.DownloadStatus
-import com.msp1974.vacompanion.wakeword.WakeWordDownloader
-import com.msp1974.vacompanion.wakeword.WakeWordType
+import com.msp1974.vacompanion.utils.DownloadStatus
+import com.msp1974.vacompanion.utils.CustomFileDownloader
+import com.msp1974.vacompanion.utils.WakeWordType
 import kotlinx.serialization.json.*
 import timber.log.Timber
 
@@ -15,12 +15,13 @@ class SatelliteCustomFilesHandler(
     val config: APPConfig,
     val viewModel: VAViewModel? = null
 ) {
-    private var wakeWordDownloader = WakeWordDownloader(context, config)
+    private var customFileDownloader = CustomFileDownloader(context, config)
 
-    suspend fun downloadCustomWakeWords(force: Boolean = false): Boolean {
+    suspend fun downloadAllCustomFiles(force: Boolean = false): Boolean {
         var hasDownloaded = false
         val customFiles = config.customFiles as? JsonObject ?: return false
 
+        // Download Wake Words
         for (wakeWordTypeEntry in customFiles) {
             val typeKey = wakeWordTypeEntry.key
             
@@ -50,7 +51,7 @@ class SatelliteCustomFilesHandler(
                 if (wakeWordModelType == WakeWordType.OPENWAKEWORD) {
                     val missingExtensions = mutableListOf<String>()
                     for (ext in extensions) {
-                        if (force || !wakeWordDownloader.fileExists(wakeWordModelType, "$name.$ext")) {
+                        if (force || !customFileDownloader.wakeWordFileExists(wakeWordModelType, "$name.$ext")) {
                             missingExtensions.add(ext)
                         }
                     }
@@ -58,7 +59,7 @@ class SatelliteCustomFilesHandler(
                     if (missingExtensions.isNotEmpty()) {
                         Timber.i("Download of $name ($wakeWordModelType) files needed: $missingExtensions")
                         val displayName = name.replace("_", " ").capitalizeWords()
-                        wakeWordDownloader.downloadWakeWord(wakeWordModelType, name, missingExtensions).collect { status ->
+                        customFileDownloader.downloadWakeWordModel(wakeWordModelType, name, missingExtensions).collect { status ->
                             handleDownloadStatus(displayName, status)
                         }
                         hasDownloaded = true
@@ -72,7 +73,7 @@ class SatelliteCustomFilesHandler(
                     var downloadNeeded = force
                     if (!downloadNeeded) {
                         for (ext in extensions) {
-                            if (!wakeWordDownloader.fileExists(wakeWordModelType, "$name.$ext")) {
+                            if (!customFileDownloader.wakeWordFileExists(wakeWordModelType, "$name.$ext")) {
                                 downloadNeeded = true
                                 break
                             }
@@ -82,11 +83,42 @@ class SatelliteCustomFilesHandler(
                     if (downloadNeeded) {
                         Timber.i("Download of $name ($wakeWordModelType) needed")
                         val displayName = name.replace("_", " ").capitalizeWords()
-                        wakeWordDownloader.downloadWakeWord(wakeWordModelType, name, extensions).collect { status ->
+                        customFileDownloader.downloadWakeWordModel(wakeWordModelType, name, extensions).collect { status ->
                             handleDownloadStatus(displayName, status)
                         }
                         hasDownloaded = true
                     }
+                }
+            }
+        }
+
+        // Download Sounds and Alarms
+        if (downloadAllGenericFiles(customFiles, CustomFileDownloader.SOUNDS_DIR, force)) hasDownloaded = true
+        if (downloadAllGenericFiles(customFiles, CustomFileDownloader.ALARMS_DIR, force)) hasDownloaded = true
+
+        return hasDownloaded
+    }
+
+    private suspend fun downloadAllGenericFiles(customFiles: JsonObject, subDir: String, force: Boolean = false): Boolean {
+        var hasDownloaded = false
+        val files = customFiles[subDir] as? JsonObject ?: return false
+        
+        for (fileEntry in files) {
+            val name = fileEntry.key
+            val entryConfig = fileEntry.value as? JsonObject
+            val extensions = entryConfig?.get("extensions")?.jsonArray?.map { it.jsonPrimitive.content } ?: listOf("xxx")
+
+            for (ext in extensions) {
+                val fileName = "$name.$ext"
+                val fileExists = java.io.File("${context.filesDir}/${CustomFileDownloader.CUSTOM_DIR}/$subDir", fileName).exists()
+
+                if (force || !fileExists) {
+                    Timber.i("Download of $subDir/$fileName needed")
+                    val displayName = name.replace("_", " ").capitalizeWords()
+                    customFileDownloader.downloadCustomFile(subDir, fileName).collect { status ->
+                        handleDownloadStatus(displayName, status)
+                    }
+                    hasDownloaded = true
                 }
             }
         }
@@ -115,42 +147,41 @@ class SatelliteCustomFilesHandler(
 
         // Cleanup orphaned wake words
         WakeWordType.entries.forEach { type ->
-            val localFiles = wakeWordDownloader.listWakeWords(type)
+            val localFiles = customFileDownloader.listCustomWakeWordModels(type)
             val configuredForType = configuredWakeWords[type] ?: emptySet()
             localFiles.forEach { localName ->
                 if (!configuredForType.contains(localName)) {
                     Timber.i("Deleting orphaned wake word: $localName ($type)")
-                    wakeWordDownloader.deleteWakeWord(type, localName)
+                    customFileDownloader.deleteWakeWordModel(type, localName)
                 }
             }
         }
 
-        // Download/Update all configured wake words
-        downloadCustomWakeWords(force = true)
-
         // 2. Sync Sounds and Alarms
-        syncGenericFiles(customFiles, WakeWordDownloader.SOUNDS_DIR)
-        syncGenericFiles(customFiles, WakeWordDownloader.ALARMS_DIR)
+        // Cleanup orphans first
+        cleanupAllGenericOrphans(customFiles, CustomFileDownloader.SOUNDS_DIR)
+        cleanupAllGenericOrphans(customFiles, CustomFileDownloader.ALARMS_DIR)
+
+        // Download/Update everything
+        downloadAllCustomFiles(force = true)
     }
 
-    private suspend fun syncGenericFiles(customFiles: JsonObject, subDir: String) {
-        val configuredFiles = (customFiles[subDir] as? JsonArray)?.map { it.jsonPrimitive.content }?.toSet() ?: emptySet()
-        val localFiles = wakeWordDownloader.listCustomFiles(subDir)
+    private fun cleanupAllGenericOrphans(customFiles: JsonObject, subDir: String) {
+        val configuredEntries = customFiles[subDir] as? JsonObject ?: return
+        val configuredFiles = mutableSetOf<String>()
+        
+        for (entry in configuredEntries) {
+            val name = entry.key
+            val extensions = (entry.value as? JsonObject)?.get("extensions")?.jsonArray?.map { it.jsonPrimitive.content } ?: listOf("wav")
+            extensions.forEach { ext -> configuredFiles.add("$name.$ext") }
+        }
 
-        // Cleanup orphans
+        val localFiles = customFileDownloader.listCustomFiles(subDir)
+
         localFiles.forEach { localName ->
             if (!configuredFiles.contains(localName)) {
                 Timber.i("Deleting orphaned $subDir: $localName")
-                wakeWordDownloader.deleteCustomFile(subDir, localName)
-            }
-        }
-
-        // Download all configured
-        configuredFiles.forEach { fileName ->
-            Timber.i("Syncing $subDir: $fileName")
-            val displayName = fileName.replace("_", " ").capitalizeWords()
-            wakeWordDownloader.downloadCustomFile(subDir, fileName).collect { status ->
-                handleDownloadStatus(displayName, status)
+                customFileDownloader.deleteCustomFile(subDir, localName)
             }
         }
     }

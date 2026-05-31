@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Intent
 import android.media.AudioManager
+import android.net.Uri
 import android.os.IBinder
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
@@ -42,7 +43,7 @@ class AlarmService() : Service() {
         }
 
         val url = intent?.getStringExtra("url") ?: ""
-        play(url)
+        play(url.toUri())
         return START_NOT_STICKY
     }
 
@@ -56,15 +57,15 @@ class AlarmService() : Service() {
         return player
     }
 
-    fun play(url: String) {
-        Timber.i("Alarm started: $url")
+    fun play(uri: Uri) {
+        Timber.i("Alarm started: $uri")
         val player = mediaPlayer ?: return
 
         try {
-            val mediaUri = if (url.isNotBlank()) {
-                url.toUri()
+            val mediaUri = if (uri.toString().isNotBlank()) {
+                uri
             } else {
-                "android.resource://${this.applicationContext.packageName}/${R.raw.alarm_sound}".toUri()
+                "asset:///alarm/alarm_sound.mp3".toUri()
             }
             player.setMediaItem(MediaItem.fromUri(mediaUri))
             player.repeatMode = Player.REPEAT_MODE_ONE

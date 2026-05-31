@@ -1,9 +1,8 @@
 package com.msp1974.vacompanion.wakeword
 
 import android.content.Context
-import com.google.android.play.core.assetpacks.cu
-import com.msp1974.vacompanion.wakeword.WakeWordDownloader.Companion.CUSTOM_DIR
-import com.msp1974.vacompanion.wakeword.WakeWordDownloader.Companion.WAKEWORDS_DIR
+import com.msp1974.vacompanion.utils.CustomFileDownloader.Companion.CUSTOM_DIR
+import com.msp1974.vacompanion.utils.CustomFileDownloader.Companion.WAKEWORDS_DIR
 import com.msp1974.vacompanion.wakeword.microwakeword.providers.MicroWakeWordAssetProvider
 import com.msp1974.vacompanion.wakeword.microwakeword.providers.MicroWakeWordCustomProvider
 import com.msp1974.vacompanion.wakeword.models.WakeWordWithId
@@ -12,7 +11,6 @@ import com.msp1974.vacompanion.wakeword.openwakeword.providers.OpenWakeWordCusto
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import timber.log.Timber
 import kotlin.io.path.Path
 
 typealias AvailableWakeWordsType = MutableMap<String, List<WakeWordWithId>>
