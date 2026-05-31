@@ -14,7 +14,6 @@ import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioManager
@@ -23,7 +22,6 @@ import android.os.Bundle
 import android.os.StrictMode
 import android.provider.Settings
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -70,13 +68,13 @@ import com.msp1974.vacompanion.utils.Helpers
 import com.msp1974.vacompanion.utils.Logger
 import com.msp1974.vacompanion.utils.Permissions
 import com.msp1974.vacompanion.device.ScreenUtils
+import com.msp1974.vacompanion.device.ScreenOnMode
 import com.msp1974.vacompanion.settings.PageLoadingStage
 import com.msp1974.vacompanion.utils.Updater
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 import java.time.Instant
 import java.time.format.DateTimeFormatter
@@ -105,7 +103,8 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
     private var hasNetwork: Boolean = false
     private var screenOffStartUp: Boolean = false
     private var screenOffInProgress: Boolean = false
-    private var screenSleepWaitJob: Job? = null
+    private var screenModeJob: Job? = null
+    private var lastScreenStateEvent: Long = 0
 
 
 
@@ -155,12 +154,12 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         if (!screen.isScreenOn()  && screen.isScreenOff()) {
             Timber.i("Performing screen off startup....")
             screenOffStartUp = true
+            applyScreenMode(ScreenOnMode.ON_DARK)
         } else {
             screenOffStartUp = false
             Timber.i("Performing screen on startup....")
+            applyScreenMode(ScreenOnMode.ON)
         }
-
-        setScreenSettings()
 
         // Init webview setup
         initWebView()
@@ -232,35 +231,37 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
 
     }
 
+    private fun updateScreenMode2() {
+        val mode = when {
+            !config.screenOn -> ScreenOnMode.OFF
+            config.screenSaver -> ScreenOnMode.ON_DARK
+            else -> ScreenOnMode.ON
+        }
+        applyScreenMode(mode)
+    }
+
+    private fun applyScreenMode(mode: ScreenOnMode) {
+        Timber.d("MainActivity - Applying screen mode: $mode")
+        screenModeJob?.cancel()
+        screenModeJob = lifecycleScope.launch {
+            if (mode == ScreenOnMode.OFF) screenOffInProgress = true
+            try {
+                screen.setScreenMode(
+                    mode = mode,
+                    window = window,
+                    isDeviceAdmin = permissions.isDeviceAdmin(),
+                    setOverlay = { viewModel.setScreenBlank(it) }
+                )
+            } finally {
+                screenOffInProgress = false
+            }
+        }
+    }
+
     fun setScreenSettings() {
         // Hide system bars
         Timber.d("Setting screen settings: Initialised: $initialised, ScreenOffStart: $screenOffStartUp, Sat Running: ${viewModel.vacaState.value.satelliteRunning}")
         screen.hideSystemUI(window)
-
-        if (!initialised) {
-            // Set screen for loading
-            screen.setScreenAlwaysOn(window, true)
-
-            if (screenOffStartUp) {
-                config.screenBrightness = screen.getScreenBrightness()
-                screenSaver(true)
-                screenWake()
-            } else {
-                if (config.screenBrightness <= 0.3) config.screenBrightness = 0.6f
-                screen.setScreenBrightness(window, config.screenBrightness)
-
-                config.screenTimeout = screen.getScreenTimeout()
-                if (config.screenTimeout < 15000) config.screenTimeout = 15000
-                screen.setScreenTimeout(config.screenTimeout)
-                screenSaver(false)
-                screenWake()
-            }
-        } else if (viewModel.vacaState.value.satelliteRunning) {
-            screen.setScreenBrightness(window, config.screenBrightness)
-            screen.setScreenAutoBrightness(window, config.screenAutoBrightness)
-            screen.setScreenTimeout(config.screenTimeout)
-            screen.setScreenAlwaysOn(window, config.screenAlwaysOn)
-        }
     }
 
     fun initWebView() {
@@ -304,9 +305,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
 
         if (!viewModel.vacaState.value.permissions.hasCorePermissions) {
             setStatus(getString(R.string.status_no_permissions))
-            Timber.w("No Permissions")
-            viewModel.setScreenBlank(false)
-            screenWake()
+            applyScreenMode(ScreenOnMode.ON)
             return
         }
         Timber.d("Permissions OK")
@@ -384,8 +383,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                     }
                 }
                 BroadcastSender.VERSION_MISMATCH -> {
-                    screenSaver(false)
-                    setScreenOn(true)
+                    applyScreenMode(ScreenOnMode.ON)
                     runUpdateRoutine()
                 }
                 BroadcastSender.REQUEST_MISSING_PERMISSIONS -> {
@@ -406,14 +404,16 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                     terminateApp()
                 }
                 Intent.ACTION_SCREEN_ON -> {
-                    if (initialised) {
-                        // If woken by hardware buttons set screen config
-                        setScreenSaver(false)
+                    // Handles if screen woken by hardware button
+                    if (initialised && !config.screenOn) {
+                        config.screenOn = true
                     }
-                    setScreenOn(true)
                 }
                 Intent.ACTION_SCREEN_OFF -> {
-                    setScreenOn(false)
+                    //Handles if screen off by hardware button or timeout
+                    if (config.screenOn) {
+                        config.screenOn = false
+                    }
                 }
                 NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED -> {
                     val dndEnabled = DeviceCapabilitiesManager.isDoNotDisturbEnabled(context)
@@ -522,7 +522,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         if (screenOffStartUp) {
             Timber.d("Screen off startup.  Reverting to screen off")
             delay(2000)
-            screenSleep()
+            applyScreenMode(ScreenOnMode.OFF)
             screenOffStartUp = false
         }
         initialised = true
@@ -569,13 +569,13 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                 "textSize" -> webView.setTextSize(event.newValue as Int)
                 "darkMode" -> setDarkMode(event.newValue as Boolean)
                 "refresh" -> webView.refresh()
-                "screenWake" -> screenWake()
-                "screenSleep" -> screenSleep()
-                "screenOn" -> screenOn(event.newValue as Boolean)
-                "screenSaver" -> screenSaver(event.newValue as Boolean)
-                "screenOrientationMode" -> setScreenOrientation(event.newValue as String)
-                "deviceBump" -> if (config.screenOnBump) screenWake()
-                "proximity" -> if (config.screenOnProximity && event.newValue as Float == 0f) screenWake()
+                "screenWake" -> applyScreenMode(ScreenOnMode.ON)
+                "screenSleep" -> applyScreenMode(ScreenOnMode.OFF)
+                "screenOn" -> handleScreenOnChange(event.newValue as Boolean)
+                "screenSaver" -> applyScreenMode(if (event.newValue as Boolean) ScreenOnMode.ON else ScreenOnMode.OFF)
+                "screenOrientationMode" -> screen.setScreenOrientation(this@MainActivity, event.newValue as String)
+                "deviceBump" -> if (config.screenOnBump) applyScreenMode(ScreenOnMode.ON)
+                "proximity" -> if (config.screenOnProximity && event.newValue as Float == 0f) applyScreenMode(ScreenOnMode.ON)
                 "motion" -> onMotion()
                 "showToastMessage" -> Toast.makeText(
                     this,
@@ -595,119 +595,21 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         }
     }
 
+    fun handleScreenOnChange(screenOn: Boolean) {
+        val now = System.currentTimeMillis()
+        if (now - lastScreenStateEvent > 1000) {
+            if (screen.isScreenOn() != screenOn) {
+                applyScreenMode(if (screenOn) ScreenOnMode.ON else ScreenOnMode.OFF)
+                lastScreenStateEvent = now
+            }
+        }
+    }
+
     fun onMotion() {
         config.lastMotion = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
-        if (config.screenOnMotion) screenWake()
-    }
-
-    fun setScreenOrientation(mode: String) {
-        when (mode) {
-            "auto" ->  setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
-            "portrait" -> setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
-            "landscape" -> setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
-            "reverse_portrait" -> setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT)
-            "reverse_landscape" -> setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE)
+        if (config.screenOnMotion) {
+            applyScreenMode(ScreenOnMode.ON)
         }
-    }
-
-    fun screenSaver(active: Boolean) {
-        if (active) {
-            Timber.d("Enabling screen saver")
-            viewModel.setScreenBlank(true)
-            screen.setScreenAlwaysOn(window, true)
-            screen.setScreenAutoBrightness(window, false)
-            screen.setScreenBrightness(window, 0.01f)
-        } else {
-            Timber.d("Disabling screen saver")
-            viewModel.setScreenBlank(false)
-            screen.setScreenAlwaysOn(window, config.screenAlwaysOn)
-            screen.setScreenAutoBrightness(window, config.screenAutoBrightness)
-            screen.setScreenBrightness(window, config.screenBrightness)
-        }
-    }
-
-    fun setScreenSaver(active: Boolean) {
-        config.screenSaver = active
-    }
-
-    fun screenOn(active: Boolean) {
-        Timber.d("Screen status: isOff: ${screen.isScreenOff()}, isOn: ${screen.isScreenOn()}")
-        if (active) {
-            screenWake()
-        } else {
-            screenSleep()
-        }
-    }
-
-    fun setScreenOn(active: Boolean) {
-        config.screenOn = active
-    }
-
-    fun screenWake() {
-        Timber.d("Wake screen")
-        // Cancel any screen sleep timer
-        if (screenSleepWaitJob != null && screenSleepWaitJob!!.isActive) {
-            screenSleepWaitJob!!.cancel()
-            screenOffInProgress = false
-        }
-
-        // Experimental fix for screen not turning on on A15+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            this.setTurnScreenOn(true);
-        } else {
-            window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
-        }
-
-        // Ensure on every wake that screen timeout is correct
-        if (screen.getScreenTimeout() != config.screenTimeout) {
-            screen.setScreenTimeout(config.screenTimeout)
-        }
-        screen.wakeScreen()
-    }
-
-    fun screenSleep() {
-        if (screen.isScreenOff()) {
-            Timber.d("Screen already off, ignoring sleep request")
-            return
-        }
-        Timber.d("Sleeping screen")
-        val hasDeviceAdmin = permissions.isDeviceAdmin()
-        if (hasDeviceAdmin) {
-            screen.setPartialWakeLock()
-            screen.lockScreen()
-            return
-        }
-
-        if (!screenOffInProgress) {
-            Timber.d("Sleeping screen via timeout")
-            screenOffInProgress = true
-            setScreenSaver(true)
-            screen.setPartialWakeLock()
-            if (screen.setScreenTimeout(1000)) {
-                screenSleepWaitJob = lifecycleScope.launch {
-                    waitForScreenOff()
-                }
-            } else {
-                screenOffInProgress = false
-            }
-        }
-    }
-
-    suspend fun waitForScreenOff() {
-        try {
-            delay(1000)
-            withTimeout(15000) {
-                while (!screen.isScreenOff()) {
-                    delay(100)
-                }
-            }
-        } catch (ex: Exception) {
-            log.w("Timed out waiting for screen off")
-            screenOffInProgress = false
-            return
-        }
-        screenOffInProgress = false
-        log.d("Screen off")
     }
 
     fun setDarkMode(isDark: Boolean) {
