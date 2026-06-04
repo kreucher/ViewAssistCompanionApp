@@ -42,8 +42,8 @@ class AlarmService() : Service() {
             mediaPlayer = createPlayer()
         }
 
-        val url = intent?.getStringExtra("url") ?: ""
-        play(url.toUri())
+        val uri = intent?.getStringExtra("uri") ?: ""
+        play(uri.toUri())
         return START_NOT_STICKY
     }
 
