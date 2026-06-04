@@ -4,6 +4,9 @@ import android.annotation.SuppressLint
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import androidx.camera.camera2.Camera2Config
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.CameraXConfig
 import com.msp1974.vacompanion.utils.ActivityManager
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
@@ -20,7 +23,7 @@ import javax.net.ssl.X509TrustManager
 
 
 @HiltAndroidApp
-class VACAApplication: Application() {
+class VACAApplication: Application(), CameraXConfig.Provider {
     override fun onCreate() {
         super.onCreate()
         Thread.setDefaultUncaughtExceptionHandler(AppExceptionHandler(this.applicationContext))
@@ -41,6 +44,13 @@ class VACAApplication: Application() {
             getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
 
+    }
+
+    override fun getCameraXConfig(): CameraXConfig {
+        return CameraXConfig.Builder.fromConfig(Camera2Config.defaultConfig())
+            .setAvailableCamerasLimiter(CameraSelector.DEFAULT_FRONT_CAMERA)
+            .setMinimumLoggingLevel(android.util.Log.ERROR)
+            .build()
     }
 
     private fun disableSSLCertificateChecking() {

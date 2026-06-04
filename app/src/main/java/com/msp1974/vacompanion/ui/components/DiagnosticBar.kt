@@ -7,8 +7,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,6 +52,24 @@ fun DiagnosticBar(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Motion Detection Icon
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.DirectionsRun,
+                    contentDescription = "Motion Detected",
+                    tint = if (diagnosticInfo.motionDetected) CustomColours.GREEN else Color.Gray,
+                    modifier = Modifier.size(64.dp)
+                )
+                Text(
+                    text = "Motion",
+                    color = if (diagnosticInfo.motionDetected) CustomColours.GREEN else Color.Gray,
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
             InfoGauge(
                 indicatorValue = diagnosticInfo.audioLevel,
                 maxIndicatorValue = 100,
@@ -93,12 +115,13 @@ fun DiagnosticBar(
                     )
                 )
             }
+
         }
     }
 
 }
 
-@Preview(apiLevel = 35)
+@Preview(apiLevel = 35, widthDp = 800, heightDp = 400)
 @Composable
 fun DiagnosticBarPreview() {
     DiagnosticBar(
@@ -107,8 +130,21 @@ fun DiagnosticBarPreview() {
             audioLevel = 50f,
             detectionLevel = 8.1f,
             detectionThreshold = 5f,
-            vadDetection = true
+            motionDetected = true
         )
     )
+}
 
+@Preview(apiLevel = 35, widthDp = 400, heightDp = 800)
+@Composable
+fun DiagnosticBarPortraitPreview() {
+    DiagnosticBar(
+        modifier = Modifier.background(Color.White),
+        diagnosticInfo = DiagnosticInfo(
+            audioLevel = 30f,
+            detectionLevel = 2.5f,
+            detectionThreshold = 5f,
+            motionDetected = false
+        )
+    )
 }

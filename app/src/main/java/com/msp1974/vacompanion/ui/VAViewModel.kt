@@ -37,9 +37,11 @@ import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import timber.log.Timber
 import javax.inject.Inject
 import androidx.core.net.toUri
+import com.msp1974.vacompanion.device.Camera
 
   class VADialog(
     val title: String = "AlertDialog",
@@ -84,7 +86,8 @@ data class DiagnosticInfo(
     var detectionLevel: Float = 0f,
     var mode: AudioRouteOption = AudioRouteOption.NONE,
     var wakeWord: String = "",
-    var vadDetection: Boolean = false
+    var vadDetection: Boolean = false,
+    var motionDetected: Boolean = false
 )
 
 
@@ -122,7 +125,9 @@ data class State(
     var webViewPageLoadingStage: PageLoadingStage = PageLoadingStage.NOT_STARTED,
     var showUUIDChangeDialog: Boolean = false,
     var isNetworkConnected: Boolean = true,
-    var customFiles: CustomFilesState = CustomFilesState()
+    var customFiles: CustomFilesState = CustomFilesState(),
+    var cameraStreamActive: Boolean = false,
+    var motionDetectionSensitivity: Int = 0
     )
 
 @HiltViewModel
@@ -160,6 +165,7 @@ class VAViewModel @Inject constructor(
             currentState.copy(
                 launchOnBoot = config.startOnBoot,
                 swipeRefreshEnabled = config.swipeRefresh,
+                motionDetectionSensitivity = config.motionDetectionSensitivity,
                 // TODO: Move this into a dedicated configuration observer pattern to handle live updates.
                 diagnosticInfo = currentState.diagnosticInfo.copy(
                     show = config.diagnosticsEnabled,
@@ -272,15 +278,43 @@ class VAViewModel @Inject constructor(
                 consumed = false  //Do not log event as very numerous
 
                 _vacaState.update { currentState ->
+                    data.motionDetected = currentState.diagnosticInfo.motionDetected
                     currentState.copy(
                         diagnosticInfo = data
                     )
                 }
             }
+            "motionDetectionSensitivity" -> {
+                val sensitivity = event.newValue as Int
+                _vacaState.update { currentState ->
+                    currentState.copy(
+                        motionDetectionSensitivity = sensitivity
+                    )
+                }
+            }
+            "motion" -> {
+                _vacaState.update { currentState ->
+                    currentState.copy(
+                        diagnosticInfo = currentState.diagnosticInfo.copy(
+                            motionDetected = true
+                        )
+                    )
+                }
+                viewModelScope.launch {
+                    delay(Camera.MOTION_INTERVAL.toLong())
+                    _vacaState.update { currentState ->
+                        currentState.copy(
+                            diagnosticInfo = currentState.diagnosticInfo.copy(
+                                motionDetected = false
+                            )
+                        )
+                    }
+                }
+            }
             else -> consumed = false
         }
         if (consumed) {
-            Timber.d("ViewModel - Event: ${event.eventName} - ${event.newValue}")
+            Timber.i("ViewModel - Event: ${event.eventName} - ${event.newValue}")
         }
     }
 
@@ -487,6 +521,16 @@ class VAViewModel @Inject constructor(
                 menuOpenedByAction = if (!show) false else currentState.menuOpenedByAction
             )
         }
+    }
+
+    fun setCameraStreamActive(active: Boolean) {
+        _vacaState.update { currentState ->
+            currentState.copy(
+                cameraStreamActive = active
+            )
+        }
+        config.cameraStreamActive = active
+        config.eventBroadcaster.notifyEvent(Event("cameraStreamActive", "", active))
     }
 
     fun refreshCustomFiles() {

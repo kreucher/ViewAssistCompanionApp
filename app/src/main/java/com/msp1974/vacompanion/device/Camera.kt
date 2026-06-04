@@ -1,321 +1,237 @@
 package com.msp1974.vacompanion.device
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.ImageFormat
-import android.graphics.SurfaceTexture
-import android.hardware.camera2.CameraAccessException
-import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraDevice
-import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
-import android.hardware.camera2.CaptureResult
-import android.hardware.camera2.TotalCaptureResult
-import android.media.ImageReader
-import android.os.Handler
-import android.os.Looper
-import android.util.Range
 import android.util.Size
-import android.view.Surface
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.core.*
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
-import com.jjoe64.motiondetection.motiondetection.AggregateLumaMotionDetection
-import com.jjoe64.motiondetection.motiondetection.ImageProcessing
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.utils.Event
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import com.msp1974.vacompanion.utils.ImageProcessing
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.SharedFlow
 import timber.log.Timber
-import kotlin.math.absoluteValue
-import kotlin.math.max
-import kotlin.math.min
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class Camera(val context: Context, val config: APPConfig) {
 
     private val job = SupervisorJob()
     private val scope = CoroutineScope(job + Dispatchers.IO)
+    private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
-    private var checkInterval: Long = 500
-    private var lastCheck: Long = 0
-    private val detector = AggregateLumaMotionDetection()
-
-    // Camera2-related stuff
-    private var cameraManager: CameraManager? = null
-    private var previewSize: Size? = null
-    private var cameraDevice: CameraDevice? = null
-    private var captureRequest: CaptureRequest? = null
-    private var captureSession: CameraCaptureSession? = null
-    private var imageReader: ImageReader? = null
-
-    private val settleDelay: Long = 5000
-    private var settleDelayJob: Job? = null
-    private var lastDetection: Long = 0
+    private var cameraProvider: ProcessCameraProvider? = null
+    private var imageAnalysis: ImageAnalysis? = null
+    
+    private val motionEngine = MotionDetectionEngine()
+    val motionFlow: SharedFlow<MotionResult> = motionEngine.motionFlow
 
     private var isRunning: Boolean = false
-
+    private var isStarting: Boolean = false
+    
+    private var lastDetection: Long = 0
+    private val settleDelay: Long = 5000
+    private var settleDelayJob: Job? = null
 
     init {
-        setSensitivity(config.motionDetectionSensitivity)
-    }
-
-    companion object {
-        const val MOTION_INTERVAL = 10000
-        const val MAX_LENIENCY = 50
-    }
-
-    fun setSensitivity(sensitivity: Int) {
-        detector.setLeniency(min(MAX_LENIENCY, max(0, MAX_LENIENCY - (sensitivity))))
-    }
-
-    fun startCamera() {
-        if (!isRunning) {
-            // Cant start camera if screen off so turn on and wait
-            scope.launch {
-                initCam()
-                isRunning = true
-            }
-        }
-    }
-
-    fun stopCamera() {
-        if (isRunning) {
-            try {
-                captureSession?.close()
-                captureSession = null
-
-                cameraDevice?.close()
-                cameraDevice = null
-
-                imageReader?.close()
-                imageReader = null
-
-            } catch (e: Exception) {
-                Timber.e("Error closing camera: $e")
-            } finally {
-                isRunning = false
-            }
-        }
-    }
-
-    private val captureCallback = object : CameraCaptureSession.CaptureCallback() {
-
-        override fun onCaptureProgressed(
-            session: CameraCaptureSession,
-            request: CaptureRequest,
-            partialResult: CaptureResult
-        ) {}
-
-        override fun onCaptureCompleted(
-            session: CameraCaptureSession,
-            request: CaptureRequest,
-            result: TotalCaptureResult
-        ) {}
-    }
-
-
-    private val imageListener = ImageReader.OnImageAvailableListener { reader ->
-
-        val image = reader?.acquireLatestImage()
-
-        val now = System.currentTimeMillis()
-        if (now - lastCheck > checkInterval) {
-            lastCheck = now
-
-            if (image != null) {
-                val buffer = image.planes[0].buffer
-                buffer.rewind()
-                val data = ByteArray(buffer.capacity())
-                buffer.get(data)
-
-                val img = ImageProcessing.decodeYUV420SPtoLuma(data, image.width, image.height)
-                if (settleDelayJob != null && !settleDelayJob?.isActive!!) {
-                    if (detector.detect(img, image.width, image.height)) {
-                        if (System.currentTimeMillis() - lastDetection > MOTION_INTERVAL) {
-                            Timber.d("Motion detected")
-                            config.eventBroadcaster.notifyEvent(Event("motion", "", ""))
-                            lastDetection = System.currentTimeMillis()
-                        }
+        // Setup motion detection flow subscriber
+        scope.launch {
+            motionFlow.collect { result ->
+                if (result.hasMotion) {
+                    if (System.currentTimeMillis() - lastDetection > MOTION_INTERVAL) {
+                        Timber.d("Motion detected (CameraX Engine)")
+                        config.eventBroadcaster.notifyEvent(Event("motion", "", ""))
+                        lastDetection = System.currentTimeMillis()
                     }
                 }
             }
         }
-        image?.close()
     }
 
-    private val stateCallback = object : CameraDevice.StateCallback() {
-
-        override fun onOpened(currentCameraDevice: CameraDevice) {
-            cameraDevice = currentCameraDevice
-            createCaptureSession()
-        }
-
-        override fun onDisconnected(currentCameraDevice: CameraDevice) {
-            currentCameraDevice.close()
-            cameraDevice = null
-        }
-
-        override fun onError(currentCameraDevice: CameraDevice, error: Int) {
-            currentCameraDevice.close()
-            cameraDevice = null
-        }
+    companion object {
+        const val MOTION_INTERVAL = 10000
     }
 
-    private fun initCam() {
+    fun setSensitivity(sensitivity: Int) {
+        motionEngine.setSensitivity(sensitivity)
+    }
 
-        if (ActivityCompat.checkSelfPermission(
-                context,
-                Manifest.permission.CAMERA
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
+    fun startCamera() {
+        if (isRunning || isStarting) return
+
+        val lifecycleOwner = context as? LifecycleOwner
+        if (lifecycleOwner == null) {
+            Timber.e("Camera: Context is not a LifecycleOwner. Cannot start CameraX.")
             return
         }
 
-
-        cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-
-        var camId: String? = null
-
-        for (id in cameraManager!!.cameraIdList) {
-            val characteristics = cameraManager!!.getCameraCharacteristics(id)
-            val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
-            if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
-                camId = id.toString()
-                break
-            }
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Timber.e("Camera: Permission not granted")
+            return
         }
 
-        Timber.i("Camera ID: $camId")
+        isStarting = true
+        Timber.i("Starting CameraX for motion detection")
 
-        previewSize = chooseSupportedSize(camId!!, 320, 240)
-        Timber.d("Camera preview size is $previewSize")
-
-
-        try {
-            cameraManager!!.openCamera(camId, stateCallback, Handler(Looper.getMainLooper()))
-        } catch (e: Exception) {
-            Timber.w("Error accessing camera: $e")
-        }
-
-        // Settle motion detection to reduce false detections at start
-        try {
-            Timber.d("Motion detection running....")
-            if (settleDelayJob != null && settleDelayJob!!.isActive) {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        setSensitivity(config.motionDetectionSensitivity)
+        cameraProviderFuture.addListener({
+            try {
+                cameraProvider = cameraProviderFuture.get()
+                // Ensure we are running on the main thread for binding
+                bindCameraUseCases(lifecycleOwner)
+                isRunning = true
+                isStarting = false
+                
+                // Settle motion detection to reduce false detections at start
                 settleDelayJob?.cancel()
+                settleDelayJob = scope.launch {
+                    delay(settleDelay)
+                }
+                
+            } catch (e: Exception) {
+                Timber.e("Camera: Error starting CameraX: $e")
+                isRunning = false
+                isStarting = false
             }
-            settleDelayJob = scope.launch {
-                delay(settleDelay)
+        }, ContextCompat.getMainExecutor(context))
+    }
+
+    @SuppressLint("UnsafeOptInUsageError")
+    private fun bindCameraUseCases(lifecycleOwner: LifecycleOwner) {
+        val cameraProvider = cameraProvider ?: return
+
+        val resolutionSelector = ResolutionSelector.Builder()
+            .setResolutionStrategy(ResolutionStrategy(Size(320, 240), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
+            .build()
+
+        val analysisBuilder = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+            .setResolutionSelector(resolutionSelector)
+
+        // Interop for low-light optimizations (Antibanding)
+        Camera2Interop.Extender(analysisBuilder).apply {
+            setCaptureRequestOption(CaptureRequest.CONTROL_AE_ANTIBANDING_MODE, CaptureRequest.CONTROL_AE_ANTIBANDING_MODE_AUTO)
+        }
+        
+        imageAnalysis = analysisBuilder.build().also {
+            it.setAnalyzer(cameraExecutor) { image ->
+                processImageProxy(image)
+            }
+        }
+
+        val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+
+        try {
+            cameraProvider.unbindAll()
+            
+            // Check if we should actually be running
+            if (!config.enableMotionDetection || config.cameraStreamActive) {
+                Timber.w("Camera about to bind but motion detection disabled or stream active, skipping")
+                isRunning = false
+                isStarting = false
+                return
+            }
+
+            val camera = cameraProvider.bindToLifecycle(
+                lifecycleOwner,
+                cameraSelector,
+                imageAnalysis
+            )
+            
+            // Apply low-light optimizations (Exposure compensation)
+            val cameraControl = camera.cameraControl
+            val cameraInfo = camera.cameraInfo
+            val camera2CameraInfo = Camera2CameraInfo.from(cameraInfo)
+            
+            val range = camera2CameraInfo.getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+            if (range != null && (range.lower != 0 || range.upper != 0)) {
+                cameraControl.setExposureCompensationIndex(range.upper)
+            }
+            
+            // Try to enable Night Mode (Scene Mode) via Interop if supported
+            val sceneModes = camera2CameraInfo.getCameraCharacteristic(CameraCharacteristics.CONTROL_AVAILABLE_SCENE_MODES)
+            if (sceneModes?.contains(CaptureRequest.CONTROL_SCENE_MODE_NIGHT) == true) {
+                // To set scene mode, we need to set CONTROL_MODE to USE_SCENE_MODE as well
+                // This is best done via Interop on the UseCase
+                val currentExtender = Camera2Interop.Extender(analysisBuilder)
+                currentExtender.setCaptureRequestOption(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_USE_SCENE_MODE)
+                currentExtender.setCaptureRequestOption(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_NIGHT)
+            }
+            
+            Timber.d("CameraX bound to lifecycle successfully")
+        } catch (e: Exception) {
+            Timber.e("Camera: Use case binding failed: $e")
+        }
+    }
+
+    private fun processImageProxy(image: ImageProxy) {
+        try {
+            // Check if we are in settle delay
+            if (settleDelayJob != null && settleDelayJob!!.isActive) {
+                return
+            }
+
+            val plane = image.planes[0]
+            val buffer = plane.buffer
+            val width = image.width
+            val height = image.height
+            val rowStride = plane.rowStride
+            
+            // Extract luma data while respecting stride
+            val lumaData = ByteArray(width * height)
+            if (rowStride == width) {
+                // Contiguous buffer
+                buffer.get(lumaData)
+            } else {
+                // Buffer with padding
+                for (row in 0 until height) {
+                    buffer.position(row * rowStride)
+                    buffer.get(lumaData, row * width, width)
+                }
+            }
+            
+            // Use our luma decoder (which now includes low-light boost)
+            val luma = ImageProcessing.decodeYUV420SPtoLuma(lumaData, width, height)
+            val rotation = image.imageInfo.rotationDegrees
+
+            scope.launch {
+                motionEngine.processFrame(luma, width, height, rotation)
             }
         } catch (e: Exception) {
-            Timber.e("Error on settle job: $e")
+            Timber.e("Camera: Error processing image: $e")
+        } finally {
+            image.close()
         }
-
     }
 
-    private fun chooseSupportedSize(camId: String, textureViewWidth: Int, textureViewHeight: Int): Size {
-
-        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-
-        // Get all supported sizes for TextureView
-        val characteristics = manager.getCameraCharacteristics(camId)
-        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-        val supportedSizes = map?.getOutputSizes(SurfaceTexture::class.java)
-
-        // We want to find something near the size of our TextureView
-        val texViewArea = textureViewWidth * textureViewHeight
-        val texViewAspect = textureViewWidth.toFloat()/textureViewHeight.toFloat()
-
-        // Check for match
-        val match = supportedSizes?.firstOrNull {
-            it.width == textureViewWidth && it.height == textureViewHeight
-        }
-
-        if (match != null) {
-            return match
-        }
-
-        // Find closest)
-        val nearestToFurthestSz = supportedSizes?.sortedWith(compareBy(
-            // First find something with similar aspect
-            {
-                val aspect = if (it.width < it.height) it.width.toFloat() / it.height.toFloat()
-                else it.height.toFloat()/it.width.toFloat()
-                (aspect - texViewAspect).absoluteValue
-            },
-            // Also try to get similar resolution
-            {
-                (texViewArea - it.width * it.height).absoluteValue
+    suspend fun stopCamera() {
+        Timber.i("Stopping CameraX motion detection")
+        isRunning = false
+        isStarting = false
+        settleDelayJob?.cancel()
+        
+        // We must unbind on main thread for CameraX
+        withContext(Dispatchers.Main) {
+            try {
+                cameraProvider?.unbindAll()
+            } catch (e: Exception) {
+                Timber.e("Camera: Error unbinding: $e")
             }
-        ))
-        if (nearestToFurthestSz != null) {
-            if (nearestToFurthestSz.isNotEmpty())
-                return nearestToFurthestSz[0]
-        }
-
-        return Size(320, 240)
-    }
-
-    private fun createCaptureSession() {
-        try {
-            // Prepare surfaces we want to use in capture session
-            val targetSurfaces = ArrayList<Surface>()
-
-            // Prepare CaptureRequest that can be used with CameraCaptureSession
-            val requestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-
-                // Configure target surface for background processing (ImageReader)
-                imageReader = ImageReader.newInstance(
-                    previewSize!!.width, previewSize!!.height,
-                    ImageFormat.YUV_420_888, 2
-                )
-                imageReader!!.setOnImageAvailableListener(imageListener, null)
-
-                targetSurfaces.add(imageReader!!.surface)
-                addTarget(imageReader!!.surface)
-
-                val fps = Range(5, 5)
-
-                // Set some additional parameters for the request
-                set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
-                set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,fps)
-                set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
-            }
-
-
-            // Prepare CameraCaptureSession
-            cameraDevice!!.createCaptureSession(targetSurfaces,
-                object : CameraCaptureSession.StateCallback() {
-
-                    override fun onConfigured(cameraCaptureSession: CameraCaptureSession) {
-                        // The camera is already closed
-                        if (null == cameraDevice) {
-                            return
-                        }
-
-                        captureSession = cameraCaptureSession
-                        try {
-                            // Now we can start capturing
-                            captureRequest = requestBuilder.build()
-                            captureSession!!.setRepeatingRequest(captureRequest!!, captureCallback, null)
-
-
-                        } catch (e: CameraAccessException) {
-                            Timber.e("createCaptureSession - $e")
-                        }
-
-                    }
-
-                    override fun onConfigureFailed(cameraCaptureSession: CameraCaptureSession) {
-                        Timber.e("createCaptureSession()")
-                    }
-                }, null
-            )
-        } catch (e: CameraAccessException) {
-            Timber.e("createCaptureSession - $e")
+            cameraProvider = null
+            imageAnalysis = null
         }
     }
 }

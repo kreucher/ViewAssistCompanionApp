@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DisabledByDefault
 import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -32,6 +33,7 @@ enum class SettingsScreen {
     MAIN,
     CUSTOM_FILES,
     PERMISSIONS_INFO,
+    CAMERA_STREAM
 }
 
 enum class Dialog {
@@ -108,6 +110,14 @@ fun SettingsLayout(
                             onClick = { currentScreen = SettingsScreen.PERMISSIONS_INFO }
                         )
                     )
+                    menuOptions.add(
+                        MenuOption(
+                            title = "View Camera Stream",
+                            subtitle = "Check the camera feed for motion detection",
+                            icon = Icons.Default.Videocam,
+                            onClick = { currentScreen = SettingsScreen.CAMERA_STREAM }
+                        )
+                    )
 
                     MenuLayout(
                         title = "VACA Settings",
@@ -123,6 +133,12 @@ fun SettingsLayout(
                 }
                 SettingsScreen.PERMISSIONS_INFO -> {
                     PermissionsLayout(
+                        viewModel = viewModel,
+                        onBack = { currentScreen = SettingsScreen.MAIN }
+                    )
+                }
+                SettingsScreen.CAMERA_STREAM -> {
+                    CameraStreamLayout(
                         viewModel = viewModel,
                         onBack = { currentScreen = SettingsScreen.MAIN }
                     )

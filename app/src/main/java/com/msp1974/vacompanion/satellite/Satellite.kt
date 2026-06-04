@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import androidx.media3.common.Player
 import androidx.core.net.toUri
-import com.msp1974.vacompanion.R
 import com.msp1974.vacompanion.broadcasts.BroadcastSender
 import com.msp1974.vacompanion.data.AvailableAlarms
 import com.msp1974.vacompanion.data.AvailableWakeSounds
@@ -187,12 +186,12 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         // TODO: Do not put screen state in here as conflicts with update in MainActivity on satellite start
         sendStatus(
             buildJsonObject {
-                putJsonObject("sensors", {
+                putJsonObject("sensors") {
                     put("do_not_disturb", DeviceCapabilitiesManager.isDoNotDisturbEnabled(context))
-                })
-                putJsonObject("media_player", {
+                }
+                putJsonObject("media_player") {
                     put("playing", false)
-                })
+                }
             }
         )
     }
@@ -233,9 +232,9 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         scope.launch {
             eventHandler.stop()
             wakeWordHandler?.stop()
+            motionTask.stopCamera()
         }.join()
 
-        motionTask.stopCamera()
         stopSensors()
         state = SatelliteState.STOPPED
         BroadcastSender.sendBroadcast(context, BroadcastSender.SATELLITE_STOPPED)
@@ -564,7 +563,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         withContext(Dispatchers.Main) {
             if (enable) {
                 // Use provided url/id or fallback to setting
-                val soundId = if (url.isNotBlank()) url else config.alarmSound
+                val soundId = url.ifBlank { config.alarmSound }
                 
                 val alarm = config.availableAlarms.find { it.id == soundId }
                 val mediaUri = if (alarm != null) {
@@ -692,7 +691,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         }
     }
 
-    fun stopSensors() {
+    suspend fun stopSensors() {
         sensorRunner?.stop()
         motionTask.stopCamera()
     }

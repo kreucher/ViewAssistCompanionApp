@@ -231,13 +231,16 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
 
     }
 
-    private fun updateScreenMode2() {
-        val mode = when {
-            !config.screenOn -> ScreenOnMode.OFF
-            config.screenSaver -> ScreenOnMode.ON_DARK
-            else -> ScreenOnMode.ON
+    private fun currentScreenMode(): ScreenOnMode {
+        return if (screen.isScreenOn()) {
+            if (viewModel.vacaState.value.screenBlank) {
+                ScreenOnMode.ON_DARK
+            } else {
+                ScreenOnMode.ON
+            }
+        } else {
+            ScreenOnMode.OFF
         }
-        applyScreenMode(mode)
     }
 
     private fun applyScreenMode(mode: ScreenOnMode) {
@@ -254,6 +257,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                 )
             } finally {
                 screenOffInProgress = false
+                config.screenSaver = mode == ScreenOnMode.ON_DARK
             }
         }
     }
@@ -444,7 +448,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
             lifecycleScope.launch {
                 checkForUpdate()
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             setStatus(getString(R.string.status_app_update_required, config.minRequiredApkVersion))
         }
     }
@@ -572,7 +576,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                 "screenWake" -> applyScreenMode(ScreenOnMode.ON)
                 "screenSleep" -> applyScreenMode(ScreenOnMode.OFF)
                 "screenOn" -> handleScreenOnChange(event.newValue as Boolean)
-                "screenSaver" -> applyScreenMode(if (event.newValue as Boolean) ScreenOnMode.ON else ScreenOnMode.OFF)
+                "screenSaver" -> onScreenSaver(event.newValue as Boolean)
                 "screenOrientationMode" -> screen.setScreenOrientation(this@MainActivity, event.newValue as String)
                 "deviceBump" -> if (config.screenOnBump) applyScreenMode(ScreenOnMode.ON)
                 "proximity" -> if (config.screenOnProximity && event.newValue as Float == 0f) applyScreenMode(ScreenOnMode.ON)
@@ -605,9 +609,19 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         }
     }
 
+    fun onScreenSaver(enabled: Boolean) {
+        applyScreenMode(
+            if (enabled) {
+                ScreenOnMode.ON_DARK
+            } else {
+                if (screen.isScreenOn()) ScreenOnMode.ON else ScreenOnMode.OFF
+            }
+        )
+    }
+
     fun onMotion() {
         config.lastMotion = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
-        if (config.screenOnMotion) {
+        if (config.screenOnMotion && currentScreenMode() != ScreenOnMode.ON) {
             applyScreenMode(ScreenOnMode.ON)
         }
     }

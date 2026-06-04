@@ -7,12 +7,12 @@ import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.device.VolumeManager
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.EventListener
-import com.msp1974.vacompanion.wyoming.WyomingCapabilitiesBuilder
 import com.msp1974.vacompanion.wyoming.WyomingInfoBuilder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
@@ -116,14 +116,24 @@ class SatelliteCustomEventHandler(
                 )
             }
             "screenOn" -> {
-                satellite.sendSetting("screen_on", event.newValue as Boolean)
+                val isOn = event.newValue as Boolean
+                satellite.sendSetting("screen_on", isOn)
+                if (isOn && config.enableMotionDetection) {
+                    // Force restart of camera when screen turns on to ensure recovery
+                    scope.launch {
+                        delay(500)
+                        satellite.motionTask.startCamera()
+                    }
+                }
             }
             "enableMotionDetection" -> {
                 val state = event.newValue as Boolean
                 if (state) {
-                    satellite.motionTask.startCamera()
+                    if (!config.cameraStreamActive) {
+                        satellite.motionTask.startCamera()
+                    }
                 } else {
-                    satellite.motionTask.stopCamera()
+                    scope.launch { satellite.motionTask.stopCamera() }
                 }
             }
             "lastMotion" -> {
@@ -156,6 +166,14 @@ class SatelliteCustomEventHandler(
                         })
                     }
                 )
+            }
+            "cameraStreamActive" -> {
+                val active = event.newValue as Boolean
+                if (active) {
+                    scope.launch { satellite.motionTask.stopCamera() }
+                } else if (config.enableMotionDetection) {
+                    satellite.motionTask.startCamera()
+                }
             }
             "updateAvailableWakeWords" -> {
                 val infoBuilder = WyomingInfoBuilder(config)
