@@ -376,7 +376,8 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                     webView.loadUrl(url)
                 }
                 BroadcastSender.SATELLITE_CLIENT_UPDATED -> {
-                    if (viewModel.vacaState.value.webViewPageLoadingStage == PageLoadingStage.ERROR) {
+                    val webviewState = viewModel.vacaState.value.webViewPageLoadingStage
+                    if ( webviewState == PageLoadingStage.ERROR || webviewState == PageLoadingStage.AUTH_REQUIRED) {
                         webView.refresh()
                     }
                 }
