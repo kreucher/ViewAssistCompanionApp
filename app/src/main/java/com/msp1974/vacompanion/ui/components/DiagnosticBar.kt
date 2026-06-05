@@ -53,22 +53,24 @@ fun DiagnosticBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Motion Detection Icon
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(horizontal = 24.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.DirectionsRun,
-                    contentDescription = "Motion Detected",
-                    tint = if (diagnosticInfo.motionDetected) CustomColours.GREEN else Color.Gray,
-                    modifier = Modifier.size(64.dp)
-                )
-                Text(
-                    text = "Motion",
-                    color = if (diagnosticInfo.motionDetected) CustomColours.GREEN else Color.Gray,
-                    style = MaterialTheme.typography.labelLarge
-                )
+            if (diagnosticInfo.hasCamera) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.DirectionsRun,
+                        contentDescription = "Motion Detected",
+                        tint = if (diagnosticInfo.motionDetected) CustomColours.GREEN else Color.Gray,
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Text(
+                        text = "Motion",
+                        color = if (diagnosticInfo.motionDetected) CustomColours.GREEN else Color.Gray,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
             }
             InfoGauge(
                 indicatorValue = diagnosticInfo.audioLevel,
@@ -130,7 +132,8 @@ fun DiagnosticBarPreview() {
             audioLevel = 50f,
             detectionLevel = 8.1f,
             detectionThreshold = 5f,
-            motionDetected = true
+            motionDetected = true,
+            hasCamera = true
         )
     )
 }

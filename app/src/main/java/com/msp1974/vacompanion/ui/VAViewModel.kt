@@ -42,6 +42,7 @@ import timber.log.Timber
 import javax.inject.Inject
 import androidx.core.net.toUri
 import com.msp1974.vacompanion.device.Camera
+import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 
   class VADialog(
     val title: String = "AlertDialog",
@@ -87,7 +88,8 @@ data class DiagnosticInfo(
     var mode: AudioRouteOption = AudioRouteOption.NONE,
     var wakeWord: String = "",
     var vadDetection: Boolean = false,
-    var motionDetected: Boolean = false
+    var motionDetected: Boolean = false,
+    var hasCamera: Boolean = false
 )
 
 
@@ -144,6 +146,7 @@ class VAViewModel @Inject constructor(
     var permissions: Permissions = Permissions(application.applicationContext, config)
     val network = Network(application.applicationContext)
     val customFileDownloader = CustomFileDownloader(application, config)
+    val hasCamera = DeviceCapabilitiesManager(config.context, config).hasFrontCamera()
 
     val changedNetworkStatus = networkStatusManager.networkStatus
         .dropWhile { it.status == NetworkStatus.Available }
@@ -171,6 +174,7 @@ class VAViewModel @Inject constructor(
                     show = config.diagnosticsEnabled,
                     engine = config.wakeWordEngine,
                     muted = config.isMuted,
+                    hasCamera = hasCamera
                 )
             )
         }
@@ -279,6 +283,7 @@ class VAViewModel @Inject constructor(
 
                 _vacaState.update { currentState ->
                     data.motionDetected = currentState.diagnosticInfo.motionDetected
+                    data.hasCamera = hasCamera
                     currentState.copy(
                         diagnosticInfo = data
                     )
