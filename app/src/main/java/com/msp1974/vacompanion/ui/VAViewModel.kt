@@ -89,7 +89,9 @@ data class DiagnosticInfo(
     var wakeWord: String = "",
     var vadDetection: Boolean = false,
     var motionDetected: Boolean = false,
-    var hasCamera: Boolean = false
+    var hasCamera: Boolean = false,
+    var lastMotionTimestamp: Long = 0,
+    var motionInterval: Int = 10000
 )
 
 
@@ -283,7 +285,9 @@ class VAViewModel @Inject constructor(
 
                 _vacaState.update { currentState ->
                     data.motionDetected = currentState.diagnosticInfo.motionDetected
-                    data.hasCamera = hasCamera
+                    data.hasCamera = currentState.diagnosticInfo.hasCamera
+                    data.lastMotionTimestamp = currentState.diagnosticInfo.lastMotionTimestamp
+                    data.motionInterval = currentState.diagnosticInfo.motionInterval
                     currentState.copy(
                         diagnosticInfo = data
                     )
@@ -298,10 +302,13 @@ class VAViewModel @Inject constructor(
                 }
             }
             "motion" -> {
+                val now = System.currentTimeMillis()
                 _vacaState.update { currentState ->
                     currentState.copy(
                         diagnosticInfo = currentState.diagnosticInfo.copy(
-                            motionDetected = true
+                            motionDetected = true,
+                            lastMotionTimestamp = now,
+                            motionInterval = Camera.MOTION_INTERVAL
                         )
                     )
                 }

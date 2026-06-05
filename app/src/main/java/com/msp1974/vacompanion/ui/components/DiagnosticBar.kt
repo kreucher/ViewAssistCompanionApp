@@ -1,31 +1,27 @@
 package com.msp1974.vacompanion.ui.components
 
 import android.annotation.SuppressLint
+import android.content.res.Configuration
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.msp1974.vacompanion.ui.DiagnosticInfo
 import com.msp1974.vacompanion.ui.theme.CustomColours
 import com.msp1974.vacompanion.satellite.AudioRouteOption
+import kotlinx.coroutines.delay
+import java.lang.System
 
 
 @SuppressLint("DefaultLocale")
@@ -34,6 +30,9 @@ fun DiagnosticBar(
     diagnosticInfo: DiagnosticInfo,
     modifier: Modifier = Modifier,
 ) {
+    val configuration = LocalConfiguration.current
+    val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
@@ -45,85 +44,201 @@ fun DiagnosticBar(
                 // Prevent propagation of click
             }
     ) {
-        Row(
-            modifier = Modifier
-                .padding(top = 8.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Motion Detection Icon
-            if (diagnosticInfo.hasCamera) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(horizontal = 24.dp)
+        if (isPortrait) {
+            Column(
+                modifier = Modifier.padding(8.dp).fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.DirectionsRun,
-                        contentDescription = "Motion Detected",
-                        tint = if (diagnosticInfo.motionDetected) CustomColours.GREEN else Color.Gray,
-                        modifier = Modifier.size(64.dp)
+                    InfoGauge(
+                        canvasSize = 130.dp,
+                        indicatorValue = diagnosticInfo.audioLevel,
+                        maxIndicatorValue = 100,
+                        smallText = "Mic",
+                        foregroundIndicatorColor = CustomColours.GREEN,
+                        disabledText = "Muted",
+                        disabled = diagnosticInfo.muted
                     )
-                    Text(
-                        text = "Motion",
-                        color = if (diagnosticInfo.motionDetected) CustomColours.GREEN else Color.Gray,
-                        style = MaterialTheme.typography.labelLarge
+                    InfoGauge(
+                        canvasSize = 130.dp,
+                        indicatorValue = diagnosticInfo.detectionLevel,
+                        maxIndicatorValue = 10,
+                        decimalPlaces = 1,
+                        smallText = "Wake",
+                        foregroundIndicatorColor = if (diagnosticInfo.detectionLevel >= diagnosticInfo.detectionThreshold) CustomColours.GREEN else CustomColours.AMBER,
+                        disabledText = "Off",
+                        disabled = diagnosticInfo.wakeWord == "none"
+                    )
+                    if (diagnosticInfo.hasCamera) {
+                        MotionIndicator(diagnosticInfo)
+                    }
+                }
+                DiagnosticChips(diagnosticInfo)
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .padding(8.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (diagnosticInfo.hasCamera) {
+                    Column(
+                        modifier = Modifier.padding(end = 10.dp)
+                    ) {
+                        MotionIndicator(diagnosticInfo)
+                    }
+                }
+                Row() {
+                    InfoGauge(
+                        indicatorValue = diagnosticInfo.audioLevel,
+                        maxIndicatorValue = 100,
+                        smallText = "Mic Level",
+                        foregroundIndicatorColor = CustomColours.GREEN,
+                        disabledText = "Muted",
+                        disabled = diagnosticInfo.muted
+                    )
+
+                    InfoGauge(
+                        indicatorValue = diagnosticInfo.detectionLevel,
+                        maxIndicatorValue = 10,
+                        decimalPlaces = 1,
+                        smallText = "Detection",
+                        foregroundIndicatorColor = if (diagnosticInfo.detectionLevel >= diagnosticInfo.detectionThreshold) CustomColours.GREEN else CustomColours.AMBER,
+                        disabledText = "Disabled",
+                        disabled = diagnosticInfo.wakeWord == "none"
                     )
                 }
+
+                Column(
+                    modifier = Modifier.padding(start = 10.dp)
+                ) {
+                    DiagnosticChips(diagnosticInfo)
+                }
             }
-            InfoGauge(
-                indicatorValue = diagnosticInfo.audioLevel,
-                maxIndicatorValue = 100,
-                smallText = "Mic Level",
-                foregroundIndicatorColor = CustomColours.GREEN,
-                disabledText = "Muted",
-                disabled = diagnosticInfo.muted
-            )
-            InfoGauge(
-                indicatorValue = diagnosticInfo.detectionLevel,
-                maxIndicatorValue = 10,
-                decimalPlaces = 1,
-                smallText = "Detection",
-                foregroundIndicatorColor = if (diagnosticInfo.detectionLevel >= diagnosticInfo.detectionThreshold) CustomColours.GREEN else CustomColours.AMBER,
-                disabledText = "Disabled",
-                disabled = diagnosticInfo.wakeWord == "none"
-
-            )
-            Column() {
-                AssistChip(
-                    onClick = {},
-                    label = { Text(if (diagnosticInfo.engine != "") diagnosticInfo.engine else "Disabled") },
-                    colors = AssistChipDefaults.assistChipColors(
-                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                )
-                AssistChip(
-                    onClick = {},
-                    label = { Text("Detecting" ) },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = if (diagnosticInfo.mode == AudioRouteOption.DETECT) CustomColours.GREEN else Color.Transparent,
-                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer
-
-                    )
-                )
-                AssistChip(
-                    onClick = {},
-                    label = { Text("Streaming") },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = if (diagnosticInfo.mode == AudioRouteOption.STREAM) CustomColours.GREEN else Color.Transparent,
-                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer
-
-                    )
-                )
-            }
-
         }
     }
-
 }
 
-@Preview(apiLevel = 35, widthDp = 800, heightDp = 400)
+@Composable
+private fun MotionIndicator(diagnosticInfo: DiagnosticInfo) {
+    val motionDetected = diagnosticInfo.motionDetected
+    val lastMotionTimestamp = diagnosticInfo.lastMotionTimestamp
+    val motionInterval = diagnosticInfo.motionInterval
+
+    var progress by remember { mutableFloatStateOf(0f) }
+
+    if (motionDetected) {
+        LaunchedEffect(lastMotionTimestamp) {
+            val endTime = lastMotionTimestamp + motionInterval
+            while (System.currentTimeMillis() < endTime) {
+                val remaining = endTime - System.currentTimeMillis()
+                progress = (remaining.toFloat() / motionInterval).coerceIn(0f, 1f)
+                delay(50)
+            }
+            progress = 0f
+        }
+    } else {
+        progress = 0f
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier.padding(horizontal = 8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.DirectionsRun,
+            contentDescription = "Motion Detected",
+            tint = if (motionDetected) CustomColours.GREEN else Color.Gray,
+            modifier = Modifier.size(64.dp)
+        )
+        Box(modifier = Modifier.width(48.dp).height(4.dp)) {
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxSize(),
+                color = CustomColours.GREEN,
+                trackColor = Color.Gray.copy(alpha = 0.3f),
+            )
+        }
+        Text(
+            text = "Motion",
+            color = if (motionDetected) CustomColours.GREEN else Color.Gray,
+            style = MaterialTheme.typography.bodyLarge
+        )
+    }
+}
+
+@Composable
+private fun DiagnosticChips(diagnosticInfo: DiagnosticInfo) {
+    val configuration = LocalConfiguration.current
+    val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+
+    if (isPortrait) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AssistChip(
+                onClick = {},
+                label = { Text(if (diagnosticInfo.engine != "") diagnosticInfo.engine else "Disabled") },
+                colors = AssistChipDefaults.assistChipColors(
+                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+            AssistChip(
+                onClick = {},
+                label = { Text("Detecting") },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = if (diagnosticInfo.mode == AudioRouteOption.DETECT) CustomColours.GREEN else Color.Transparent,
+                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+            AssistChip(
+                onClick = {},
+                label = { Text("Streaming") },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = if (diagnosticInfo.mode == AudioRouteOption.STREAM) CustomColours.GREEN else Color.Transparent,
+                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+        }
+    } else {
+        Column {
+            AssistChip(
+                onClick = {},
+                label = { Text(if (diagnosticInfo.engine != "") diagnosticInfo.engine else "Disabled") },
+                colors = AssistChipDefaults.assistChipColors(
+                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+            AssistChip(
+                onClick = {},
+                label = { Text("Detecting") },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = if (diagnosticInfo.mode == AudioRouteOption.DETECT) CustomColours.GREEN else Color.Transparent,
+                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+            AssistChip(
+                onClick = {},
+                label = { Text("Streaming") },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = if (diagnosticInfo.mode == AudioRouteOption.STREAM) CustomColours.GREEN else Color.Transparent,
+                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+        }
+    }
+}
+
+@Preview(apiLevel = 35, widthDp = 800, heightDp = 200)
 @Composable
 fun DiagnosticBarPreview() {
     DiagnosticBar(
@@ -132,13 +247,16 @@ fun DiagnosticBarPreview() {
             audioLevel = 50f,
             detectionLevel = 8.1f,
             detectionThreshold = 5f,
+            vadDetection = true,
             motionDetected = true,
-            hasCamera = true
+            hasCamera = true,
+            lastMotionTimestamp = System.currentTimeMillis(),
+            motionInterval = 10000
         )
     )
 }
 
-@Preview(apiLevel = 35, widthDp = 400, heightDp = 800)
+@Preview(apiLevel = 35, widthDp = 380, heightDp = 500)
 @Composable
 fun DiagnosticBarPortraitPreview() {
     DiagnosticBar(
@@ -147,7 +265,10 @@ fun DiagnosticBarPortraitPreview() {
             audioLevel = 30f,
             detectionLevel = 2.5f,
             detectionThreshold = 5f,
-            motionDetected = false
+            motionDetected = false,
+            hasCamera = true,
+            lastMotionTimestamp = System.currentTimeMillis(),
+            motionInterval = 10000
         )
     )
 }
