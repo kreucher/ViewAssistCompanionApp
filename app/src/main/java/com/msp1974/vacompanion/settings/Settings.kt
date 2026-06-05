@@ -36,6 +36,7 @@ enum class PageLoadingStage {
     AUTHORISED,
     LOADED,
     AUTH_FAILED,
+    AUTH_REQUIRED,
     ERROR
 }
 
