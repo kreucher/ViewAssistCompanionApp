@@ -1,23 +1,18 @@
 package com.msp1974.vacompanion.wyoming
 
-import com.msp1974.vacompanion.device.DeviceCapabilitiesData
-import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
+import com.msp1974.vacompanion.device.DeviceInfo
 import com.msp1974.vacompanion.settings.APPConfig
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
-import timber.log.Timber
-import kotlin.collections.component1
-import kotlin.collections.component2
 
-class WyomingCapabilitiesBuilder(private val config: APPConfig, private val deviceInfo: DeviceCapabilitiesData) {
+class WyomingCapabilitiesBuilder(private val config: APPConfig, private val deviceInfo: DeviceInfo) {
 
     @OptIn(ExperimentalSerializationApi::class)
     fun buildInfo(): JsonObject {
-        val baseCapabilities = DeviceCapabilitiesManager.toJson(deviceInfo)
+        val baseCapabilities = deviceInfo.getJson()
         val availableWakeSounds = config.availableWakeSounds
         val availableAlarms = config.availableAlarms
 

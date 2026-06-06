@@ -4,9 +4,9 @@ import android.content.Context
 import com.msp1974.vacompanion.data.AvailableAlarms
 import com.msp1974.vacompanion.data.AvailableWakeSounds
 import com.msp1974.vacompanion.data.NetworkStatusManager
+import com.msp1974.vacompanion.device.DeviceInfo
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.wakeword.AvailableWakeWords
-import com.msp1974.vacompanion.utils.CustomFileDownloader
 import com.msp1974.vacompanion.wyoming.ServerState
 import com.msp1974.vacompanion.wyoming.WyomingTCPServer
 import kotlinx.coroutines.CoroutineScope
@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import timber.log.Timber
 
-internal class BackgroundTaskController (private val context: Context, val config: APPConfig, val connectionStatusManager: NetworkStatusManager) {
+internal class BackgroundTaskController (private val context: Context, val config: APPConfig, val deviceInfo: DeviceInfo, val connectionStatusManager: NetworkStatusManager) {
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.Default + job)
     private var server: WyomingTCPServer? = null
@@ -24,7 +24,7 @@ internal class BackgroundTaskController (private val context: Context, val confi
 
     fun start() {
 
-        server = object: WyomingTCPServer(context, config) {
+        server = object: WyomingTCPServer(context, config, deviceInfo) {
             override fun onEvent(event: String, data: JsonObject) {
                 Timber.d("BackgroundTask - Event: $event - ${data.toString()}")
             }

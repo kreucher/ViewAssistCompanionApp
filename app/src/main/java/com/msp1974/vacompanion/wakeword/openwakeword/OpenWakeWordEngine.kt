@@ -9,24 +9,17 @@ import com.google.protobuf.ByteString
 import com.msp1974.vacompanion.audio.AudioDSP
 import com.msp1974.vacompanion.audio.MicrophoneInput
 import com.msp1974.vacompanion.audio.VACAAudioFormat
-import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.settings.APPConfig
-import com.msp1974.vacompanion.wakeword.AvailableWakeWords
-import com.msp1974.vacompanion.wakeword.WakeWordEngine
 import com.msp1974.vacompanion.wakeword.WakeWordEngineModel
 import com.msp1974.vacompanion.wakeword.WakeWordEngineProvider
-import com.msp1974.vacompanion.wakeword.microwakeword.microwakeword.MicroWakeWord
-import com.msp1974.vacompanion.wakeword.microwakeword.microwakeword.MicroWakeWordDetector
 import com.msp1974.vacompanion.wakeword.models.WakeWordWithId
 import com.msp1974.vacompanion.wakeword.openwakeword.audio.AudioProcessor
 import com.msp1974.vacompanion.wakeword.openwakeword.ml.ModelRunner
 import com.msp1974.vacompanion.wakeword.openwakeword.ml.OnnxModelRunner
 import com.msp1974.vacompanion.wakeword.openwakeword.ml.TfliteModelRunner
-import com.msp1974.vacompanion.wakeword.openwakeword.model.WakeWordModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import timber.log.Timber
-import kotlin.collections.plus
 
 
 /**
@@ -44,6 +37,7 @@ class OpenWakeWordEngine(
     val availableWakeWords: List<WakeWordWithId>,
     //val availableStopWords: List<WakeWordWithId>,
     muted: Boolean = false,
+    private val isAndroidThings: Boolean = false,
     private val detectionCooldownMs: Long = 2000L,
 ): WakeWordEngineProvider() {
 
@@ -159,8 +153,7 @@ class OpenWakeWordEngine(
     override fun start() = muted.flatMapLatest {
         if (it) emptyFlow()
         else flow {
-            val isEmbedded = DeviceCapabilitiesManager(context, config).isAndroidThings()
-            val audioSource = if(isEmbedded) VACAAudioFormat.FALLBACK_AUDIO_SOURCE else VACAAudioFormat.DEFAULT_AUDIO_SOURCE
+            val audioSource = if(isAndroidThings) VACAAudioFormat.FALLBACK_AUDIO_SOURCE else VACAAudioFormat.DEFAULT_AUDIO_SOURCE
             val microphoneInput = MicrophoneInput(config, audioSource, frameSize = 1280)
             try {
                 // Create detectors here

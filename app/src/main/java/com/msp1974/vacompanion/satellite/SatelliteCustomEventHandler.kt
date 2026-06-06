@@ -3,10 +3,10 @@ package com.msp1974.vacompanion.satellite
 import android.content.Context
 import android.media.AudioManager
 import com.msp1974.vacompanion.settings.APPConfig
-import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.device.VolumeManager
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.EventListener
+import com.msp1974.vacompanion.utils.SoundControl
 import com.msp1974.vacompanion.wyoming.WyomingInfoBuilder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -70,7 +70,7 @@ class SatelliteCustomEventHandler(
                 }
             }
             "notificationVolume" -> {
-                if (!DeviceCapabilitiesManager.isDoNotDisturbEnabled(context)) {
+                if (!SoundControl.isDoNotDisturbEnabled(context)) {
                     volumeManager.setVolume(AudioManager.STREAM_NOTIFICATION, event.newValue as Int)
                 }
             }

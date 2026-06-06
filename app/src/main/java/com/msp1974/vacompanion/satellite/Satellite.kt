@@ -8,17 +8,17 @@ import com.msp1974.vacompanion.broadcasts.BroadcastSender
 import com.msp1974.vacompanion.data.AvailableAlarms
 import com.msp1974.vacompanion.data.AvailableWakeSounds
 import com.msp1974.vacompanion.device.Camera
+import com.msp1974.vacompanion.device.DeviceInfo
 import com.msp1974.vacompanion.device.SensorUpdatesCallback
 import com.msp1974.vacompanion.device.Sensors
 import com.msp1974.vacompanion.device.VolumeObserver
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.ui.DiagnosticInfo
-import com.msp1974.vacompanion.device.DeviceCapabilitiesData
-import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.Helpers
 import com.msp1974.vacompanion.wakeword.AvailableWakeWords
 import com.msp1974.vacompanion.utils.CustomFileDownloader
+import com.msp1974.vacompanion.utils.SoundControl.Companion.isDoNotDisturbEnabled
 import com.msp1974.vacompanion.wakeword.WakeWordEngineProvider
 import com.msp1974.vacompanion.wyoming.SatelliteState
 import com.msp1974.vacompanion.wyoming.WyomingCapabilitiesBuilder
@@ -57,7 +57,7 @@ interface ISatelliteEvent {
 enum class AudioRouteOption { NONE, DETECT, STREAM}
 
 
-abstract class Satellite(var context: Context, val config: APPConfig, val scope: CoroutineScope, clientIdString: String, val deviceInfo: DeviceCapabilitiesData): ISatelliteEvent {
+abstract class Satellite(var context: Context, val config: APPConfig, val scope: CoroutineScope, clientIdString: String, val deviceInfo: DeviceInfo): ISatelliteEvent {
 
     var clientId = clientIdString
     val mediaManager: SatelliteMediaManager = SatelliteMediaManager(context, config)
@@ -187,7 +187,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         sendStatus(
             buildJsonObject {
                 putJsonObject("sensors") {
-                    put("do_not_disturb", DeviceCapabilitiesManager.isDoNotDisturbEnabled(context))
+                    put("do_not_disturb", isDoNotDisturbEnabled(context))
                 }
                 putJsonObject("media_player") {
                     put("playing", false)
@@ -278,7 +278,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         Timber.d("Starting Wake Word Detection")
         sendDiagnostics(0f, 0f)
         withContext(Dispatchers.Default) {
-            wakeWordHandler = object : SatelliteWakeWorkHandler(context, config, scope) {
+            wakeWordHandler = object : SatelliteWakeWorkHandler(context, config, deviceInfo, scope) {
                 override fun onStateChange(state: WakeWordHandlerState) {
                     Timber.d("Wake word handler state: $state")
                 }
@@ -305,7 +305,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
                     }
 
                     if (mediaManager.alarmPlayer.isSounding()) {
-                        handleAlarmAction(false, "")
+                        handleAlarmAction(false)
                     }
 
                     Timber.d("Stop word detected: $detection")
@@ -532,7 +532,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
                 "wake" -> scope.launch {handleWakeWordDetection()}
                 "alarm" -> if (payloadStr.isNotEmpty()) {
                     val payload = Json.parseToJsonElement(payloadStr).jsonObject
-                    handleAlarmAction(payload["activate"]?.jsonPrimitive?.booleanOrNull ?: false, payload["url"]?.jsonPrimitive?.contentOrNull ?: "")
+                    handleAlarmAction(payload["activate"]?.jsonPrimitive?.booleanOrNull ?: false)
                 }
                 "open-settings" -> config.eventBroadcaster.notifyEvent(Event("openSettings", "", ""))
                 "update-custom-files" -> Timber.i("Update custom files requested")
@@ -559,13 +559,10 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         }
     }
 
-    private suspend fun handleAlarmAction(enable: Boolean, url: String = "") {
+    private suspend fun handleAlarmAction(enable: Boolean) {
         withContext(Dispatchers.Main) {
             if (enable) {
-                // Use provided url/id or fallback to setting
-                val soundId = url.ifBlank { config.alarmSound }
-                
-                val alarm = config.availableAlarms.find { it.id == soundId }
+                val alarm = config.availableAlarms.find { it.id == config.alarmSound }
                 val mediaUri = if (alarm != null) {
                     if (alarm.custom) {
                         java.io.File("${context.filesDir}/${CustomFileDownloader.CUSTOM_DIR}/${CustomFileDownloader.ALARMS_DIR}", alarm.filename).toUri().toString()
@@ -573,7 +570,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
                         "asset:///alarm/${alarm.filename}"
                     }
                 } else {
-                    soundId // Fallback to provided string if not found in list
+                    "asset:///alarm/default.mp3"
                 }
 
                 mediaManager.alarmPlayer.start(mediaUri)
@@ -661,7 +658,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
     }
 
     fun startSensors() {
-        sensorRunner = Sensors(context, config, object : SensorUpdatesCallback {
+        sensorRunner = Sensors(context, config, deviceInfo, object : SensorUpdatesCallback {
             override fun onUpdate(data: MutableMap<String, Any>) {
                 val data = buildJsonObject {
                     put("timestamp", Date().toString())

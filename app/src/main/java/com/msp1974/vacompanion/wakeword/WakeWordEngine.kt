@@ -10,7 +10,7 @@ import com.msp1974.vacompanion.wakeword.openwakeword.OpenWakeWordEngine
 import kotlinx.coroutines.flow.flow
 import timber.log.Timber
 
-open class WakeWordEngine(val context: Context, val config: APPConfig, val engine: WakeWordEngineModel) {
+open class WakeWordEngine(val context: Context, val config: APPConfig, val engine: WakeWordEngineModel, val isAndroidThings: Boolean) {
 
     private var activeWakeWords: List<String> = listOf()
     private var activeStopWords: List<String> = listOf()
@@ -35,7 +35,7 @@ open class WakeWordEngine(val context: Context, val config: APPConfig, val engin
                     context.assets,
                     "microwakeword/stopWords"
                 ).get()
-                return MicroWakeWordEngine(context, config, activeWakeWords, activeStopWords, availableWakeWords, availableStopWords, muted = config.isMuted)
+                return MicroWakeWordEngine(context, config, activeWakeWords, activeStopWords, availableWakeWords, availableStopWords, isAndroidThings = isAndroidThings, muted = config.isMuted)
             }
             WakeWordEngineModel.OPENWAKEWORD -> {
                 availableWakeWords.forEach { entry ->
@@ -47,7 +47,9 @@ open class WakeWordEngine(val context: Context, val config: APPConfig, val engin
                             activeWakeWords = activeWakeWords,
                             availableWakeWords = availableWakeWords,
                             detectionCooldownMs = 1500L,
-                            muted = config.isMuted
+                            isAndroidThings = isAndroidThings,
+                            muted = config.isMuted,
+
                         )
                     }
                 }
@@ -62,6 +64,7 @@ open class WakeWordEngine(val context: Context, val config: APPConfig, val engin
                             activeWakeWords = activeWakeWords,
                             availableWakeWords = availableWakeWords,
                             detectionCooldownMs = 1500L,
+                            isAndroidThings = isAndroidThings,
                             muted = config.isMuted
                         )
                     }

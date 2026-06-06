@@ -16,7 +16,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.ui.VAViewModel
 import com.msp1974.vacompanion.ui.components.MenuLayout
 import com.msp1974.vacompanion.ui.components.MenuOption
@@ -42,7 +41,6 @@ fun PermissionsLayout(
     modifier: Modifier = Modifier
 ) {
     val vaUiState by viewModel.vacaState.collectAsState()
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     // Refresh permissions status when this screen is shown or resumed
@@ -63,7 +61,6 @@ fun PermissionsLayout(
     }
 
     val permissionItems = mutableListOf<PermissionItem>()
-    val capabilities = DeviceCapabilitiesManager(context, viewModel.config)
 
     // Core Permissions
     permissionItems.add(
@@ -91,7 +88,7 @@ fun PermissionsLayout(
     }
 
     // Optional Permissions
-    if (capabilities.hasFrontCamera()) {
+    if (viewModel.deviceInfo.hardware.hasFrontCamera) {
         permissionItems.add(
             PermissionItem(
                 title = "Camera",

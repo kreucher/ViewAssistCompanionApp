@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DisabledByDefault
 import androidx.compose.material.icons.filled.FileCopy
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Surface
@@ -33,7 +34,8 @@ enum class SettingsScreen {
     MAIN,
     CUSTOM_FILES,
     PERMISSIONS_INFO,
-    CAMERA_STREAM
+    CAMERA_STREAM,
+    DEVICE_INFO
 }
 
 enum class Dialog {
@@ -110,12 +112,22 @@ fun SettingsLayout(
                             onClick = { currentScreen = SettingsScreen.PERMISSIONS_INFO }
                         )
                     )
+                    if (viewModel.deviceInfo.hardware.hasFrontCamera) {
+                        menuOptions.add(
+                            MenuOption(
+                                title = "View Camera Stream",
+                                subtitle = "Check the camera feed for motion detection",
+                                icon = Icons.Default.Videocam,
+                                onClick = { currentScreen = SettingsScreen.CAMERA_STREAM }
+                            )
+                        )
+                    }
                     menuOptions.add(
                         MenuOption(
-                            title = "View Camera Stream",
-                            subtitle = "Check the camera feed for motion detection",
-                            icon = Icons.Default.Videocam,
-                            onClick = { currentScreen = SettingsScreen.CAMERA_STREAM }
+                            title = "Device Info",
+                            subtitle = "View device capabilities and sensors",
+                            icon = Icons.Default.Info,
+                            onClick = { currentScreen = SettingsScreen.DEVICE_INFO }
                         )
                     )
 
@@ -139,6 +151,12 @@ fun SettingsLayout(
                 }
                 SettingsScreen.CAMERA_STREAM -> {
                     CameraStreamLayout(
+                        viewModel = viewModel,
+                        onBack = { currentScreen = SettingsScreen.MAIN }
+                    )
+                }
+                SettingsScreen.DEVICE_INFO -> {
+                    DeviceInfoLayout(
                         viewModel = viewModel,
                         onBack = { currentScreen = SettingsScreen.MAIN }
                     )

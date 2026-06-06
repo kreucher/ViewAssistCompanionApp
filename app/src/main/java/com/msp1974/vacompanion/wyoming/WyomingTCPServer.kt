@@ -1,10 +1,9 @@
 package com.msp1974.vacompanion.wyoming
 
 import android.content.Context
+import com.msp1974.vacompanion.device.DeviceInfo
 import com.msp1974.vacompanion.satellite.Satellite
 import com.msp1974.vacompanion.settings.APPConfig
-import com.msp1974.vacompanion.device.DeviceCapabilitiesData
-import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import io.ktor.network.selector.ActorSelectorManager
 import io.ktor.network.sockets.ServerSocket
 import io.ktor.network.sockets.aSocket
@@ -36,7 +35,7 @@ data class Connection(
     val handler: WyomingClientHandler,
 )
 
-abstract class WyomingTCPServer(private val context: Context, val config: APPConfig): IEvents {
+abstract class WyomingTCPServer(private val context: Context, val config: APPConfig, val deviceInfo: DeviceInfo): IEvents {
 
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + job)
@@ -48,7 +47,6 @@ abstract class WyomingTCPServer(private val context: Context, val config: APPCon
     private var serverSocket: ServerSocket? = null
     private var restartIfStopped: Boolean = false
 
-    private var deviceInfo: DeviceCapabilitiesData = DeviceCapabilitiesManager(context, config).getDeviceInfo()
     private val infoBuilder: WyomingInfoBuilder = WyomingInfoBuilder(config)
     private val capabilitiesBuilder: WyomingCapabilitiesBuilder = WyomingCapabilitiesBuilder(config, deviceInfo)
 

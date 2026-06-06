@@ -52,6 +52,34 @@ fun MenuLayout(
     onClose: () -> Unit,
     options: List<MenuOption>
 ) {
+    MenuLayout(
+        modifier = modifier,
+        title = title,
+        level = level,
+        onClose = onClose
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(vertical = 8.dp)
+        ) {
+            items(options) { option ->
+                MenuListItem(option = option)
+            }
+        }
+    }
+}
+
+/**
+ * A flexible menu layout component that allows custom content.
+ */
+@Composable
+fun MenuLayout(
+    modifier: Modifier = Modifier,
+    title: String = "VACA Settings",
+    level: Int = 0,
+    onClose: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -82,14 +110,7 @@ fun MenuLayout(
 
         HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
-            items(options) { option ->
-                MenuListItem(option = option)
-            }
-        }
+        content()
     }
 }
 

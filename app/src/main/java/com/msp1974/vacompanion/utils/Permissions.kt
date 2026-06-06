@@ -13,11 +13,11 @@ import android.provider.Settings
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.msp1974.vacompanion.VACADeviceAdminReceiver
-import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
+import com.msp1974.vacompanion.device.DeviceInfo
 import com.msp1974.vacompanion.settings.APPConfig
 import timber.log.Timber
 
-class Permissions(val context: Context, val config: APPConfig) {
+class Permissions(val context: Context, val config: APPConfig, val deviceInfo: DeviceInfo) {
 
     companion object {
         const val CAMERA = Manifest.permission.CAMERA
@@ -47,7 +47,7 @@ class Permissions(val context: Context, val config: APPConfig) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             permissions.add(WRITE_EXTERNAL_STORAGE)
         }
-        if (DeviceCapabilitiesManager(context, config).hasFrontCamera()) {
+        if (deviceInfo.hardware.hasFrontCamera) {
             permissions.add(CAMERA)
         }
 

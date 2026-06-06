@@ -65,7 +65,7 @@ class AlarmService() : Service() {
             val mediaUri = if (uri.toString().isNotBlank()) {
                 uri
             } else {
-                "asset:///alarm/alarm_sound.mp3".toUri()
+                "asset:///alarm/default.mp3".toUri()
             }
             player.setMediaItem(MediaItem.fromUri(mediaUri))
             player.repeatMode = Player.REPEAT_MODE_ONE

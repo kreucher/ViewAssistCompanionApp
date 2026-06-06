@@ -47,6 +47,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.msp1974.vacompanion.ui.VAViewModel
 import com.msp1974.vacompanion.broadcasts.BroadcastSender
+import com.msp1974.vacompanion.device.DeviceInfo
 import com.msp1974.vacompanion.service.VAForegroundService
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.settings.BackgroundTaskStatus
@@ -60,7 +61,6 @@ import com.msp1974.vacompanion.ui.theme.AppTheme
 import com.msp1974.vacompanion.utils.AuthUtils
 import com.msp1974.vacompanion.utils.CustomWebView
 import com.msp1974.vacompanion.utils.CustomWebViewClient
-import com.msp1974.vacompanion.device.DeviceCapabilitiesManager
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.EventListener
 import com.msp1974.vacompanion.utils.FirebaseManager
@@ -70,6 +70,7 @@ import com.msp1974.vacompanion.utils.Permissions
 import com.msp1974.vacompanion.device.ScreenUtils
 import com.msp1974.vacompanion.device.ScreenOnMode
 import com.msp1974.vacompanion.settings.PageLoadingStage
+import com.msp1974.vacompanion.utils.SoundControl
 import com.msp1974.vacompanion.utils.Updater
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -85,6 +86,7 @@ import kotlin.getValue
 class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
 
     @Inject lateinit var config: APPConfig
+    @Inject lateinit var deviceInfo: DeviceInfo
 
     val viewModel: VAViewModel by viewModels()
 
@@ -117,7 +119,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
 
         screen = ScreenUtils(this, config)
         updater = Updater(this)
-        permissions = Permissions(this, config)
+        permissions = Permissions(this, config, deviceInfo)
 
         var keepSplashScreen = true
 
@@ -283,12 +285,11 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
     }
 
     fun setFirebaseUserProperties() {
-        val webViewVersion = DeviceCapabilitiesManager(this, config).getWebViewVersion()
-        firebaseManager?.setUserProperty("webview_version", webViewVersion)
+        firebaseManager?.setUserProperty("webview_version", deviceInfo.software.webViewVersion)
         firebaseManager?.setUserProperty("device_signature", Helpers.getDeviceName().toString())
 
         firebaseManager?.setCustomKeys(mapOf(
-            "Webview" to webViewVersion,
+            "Webview" to deviceInfo.software.webViewVersion,
             "Device" to Helpers.getDeviceName().toString(),
             "UUID" to config.uuid
         ))
@@ -421,7 +422,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                     }
                 }
                 NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED -> {
-                    val dndEnabled = DeviceCapabilitiesManager.isDoNotDisturbEnabled(context)
+                    val dndEnabled = SoundControl.isDoNotDisturbEnabled(context)
                     if (config.doNotDisturb != dndEnabled) {
                         config.doNotDisturb = dndEnabled
                     }
@@ -684,7 +685,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
             config.hasRecordAudioPermission = true
         }
 
-        if (DeviceCapabilitiesManager(this, config).hasFrontCamera()) {
+        if (deviceInfo.hardware.hasFrontCamera) {
             if (ContextCompat.checkSelfPermission(this, permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 requiredPermissions += permission.CAMERA
                 requestID += CAMERA_PERMISSIONS_REQUEST
@@ -848,8 +849,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
     }
 
     private fun checkAndRequestDeviceAdminPermission() {
-        val device = DeviceCapabilitiesManager(this, config)
-        if (!device.isAndroidThings() && !permissions.isDeviceAdmin()) {
+        if (!deviceInfo.software.isAndroidThings && !permissions.isDeviceAdmin()) {
             val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
             intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(this, VACADeviceAdminReceiver::class.java))
             intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "This application requires Device Admin rights to be able to control the screen.")
