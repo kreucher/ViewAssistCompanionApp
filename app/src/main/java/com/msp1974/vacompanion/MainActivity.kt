@@ -624,6 +624,9 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         config.lastMotion = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
         if (config.screenOnMotion && currentScreenMode() != ScreenOnMode.ON) {
             applyScreenMode(ScreenOnMode.ON)
+        } else {
+            // Stops screen from going to sleep if not set to always on
+            screen.wakeScreen()
         }
     }
 
