@@ -40,6 +40,7 @@ ktor = "3.5.0"
 ksp = "2.3.6"
 hilt = "2.59.2"
 datastoreCore = "1.2.1"
+faceDetection = "16.1.7"
 
 
 
@@ -96,6 +97,7 @@ ktor-network = { group = "io.ktor", name="ktor-network", version.ref = "ktor"}
 hilt-android-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hilt" }
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
 androidx-datastore-core = { group = "androidx.datastore", name = "datastore-core", version.ref = "datastoreCore" }
+mlkit-face-detection = { group = "com.google.mlkit", name = "face-detection", version.ref = "faceDetection" }
 
 
 

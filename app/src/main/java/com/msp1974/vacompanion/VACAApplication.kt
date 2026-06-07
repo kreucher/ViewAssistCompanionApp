@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.system.Os
 import androidx.camera.camera2.Camera2Config
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraXConfig
@@ -24,13 +25,16 @@ import javax.net.ssl.X509TrustManager
 
 @HiltAndroidApp
 class VACAApplication: Application(), CameraXConfig.Provider {
+
     override fun onCreate() {
         super.onCreate()
+
         Thread.setDefaultUncaughtExceptionHandler(AppExceptionHandler(this.applicationContext))
 
         disableSSLCertificateChecking()
 
         activityManager = ActivityManager(this)
+
         Timber.plant(DebugTree())
 
         // Create the notification channel (required for Android 8.0 and above)

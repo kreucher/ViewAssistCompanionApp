@@ -136,6 +136,19 @@ class SatelliteCustomEventHandler(
                     scope.launch { satellite.motionTask.stopCamera() }
                 }
             }
+            "motion" -> {
+                val value = event.newValue as? Boolean ?: true
+                satellite.sendStatus(
+                    buildJsonObject {
+                        putJsonObject("sensors", {
+                            put("motion_detected", value)
+                            if (value) {
+                                put("last_motion", config.lastMotion)
+                            }
+                        })
+                    }
+                )
+            }
             "lastMotion" -> {
                 satellite.sendStatus(
                     buildJsonObject {

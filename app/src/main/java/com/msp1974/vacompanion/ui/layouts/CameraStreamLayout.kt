@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.msp1974.vacompanion.device.MotionDetectionEngine
+import com.msp1974.vacompanion.device.MotionDetectionMode
 import com.msp1974.vacompanion.device.MotionResult
 import com.msp1974.vacompanion.ui.VAViewModel
 import android.graphics.RectF
@@ -55,6 +56,9 @@ fun CameraStreamLayout(
     // Track if we are ready to start the camera (after background stop)
     var isCameraReady by remember { mutableStateOf(false) }
 
+    // Surface holder state to allow binding after inflation
+    val surfaceViewRef = remember { mutableStateOf<SurfaceView?>(null) }
+
     // Ensure screen stays on while viewing the stream
     DisposableEffect(view) {
         view.keepScreenOn = true
@@ -66,6 +70,10 @@ fun CameraStreamLayout(
     // Apply sensitivity whenever it changes
     LaunchedEffect(vaUiState.motionDetectionSensitivity) {
         motionEngine.setSensitivity(vaUiState.motionDetectionSensitivity)
+    }
+
+    LaunchedEffect(vaUiState.motionDetectionMode) {
+        motionEngine.detectorMode = if (vaUiState.motionDetectionMode == "face") MotionDetectionMode.FACE_DETECTION else MotionDetectionMode.PIXEL_DIFF
     }
 
     // Camera Provider state to handle safe unbinding on exit
@@ -117,10 +125,17 @@ fun CameraStreamLayout(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
+                        surfaceViewRef.value = this
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
-                update = { surfaceView ->
+                update = { } 
+            )
+            
+            // Handle camera binding once when ready and view is inflated
+            LaunchedEffect(isCameraReady) {
+                val surfaceView = surfaceViewRef.value
+                if (isCameraReady && surfaceView != null) {
                     val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
                     cameraProviderFuture.addListener({
                         try {
@@ -150,39 +165,47 @@ fun CameraStreamLayout(
                                 .build()
                                 .also { analysis ->
                                     analysis.setAnalyzer(executor) { image ->
-                                        val planes = image.planes
-                                        val buffer = planes[0].buffer
-                                        val data = ByteArray(buffer.remaining())
-                                        buffer.get(data)
+                                        if (vaUiState.motionDetectionMode == "face") {
+                                            scope.launch {
+                                                try {
+                                                    motionEngine.processImageProxy(image)
+                                                } finally {
+                                                    image.close()
+                                                }
+                                            }
+                                        } else {
+                                            val planes = image.planes
+                                            val buffer = planes[0].buffer
+                                            val data = ByteArray(buffer.remaining())
+                                            buffer.get(data)
 
-                                        val luma = IntArray(data.size) { data[it].toInt() and 0xFF }
-                                        val width = image.width
-                                        val height = image.height
-                                        val rotation = image.imageInfo.rotationDegrees
+                                            val luma = IntArray(data.size) { data[it].toInt() and 0xFF }
+                                            val width = image.width
+                                            val height = image.height
+                                            val rotation = image.imageInfo.rotationDegrees
 
-                                        scope.launch {
-                                            motionEngine.processFrame(luma, width, height, rotation)
+                                            scope.launch {
+                                                motionEngine.processFrame(luma, width, height, rotation)
+                                            }
+
+                                            image.close()
                                         }
-
-                                        image.close()
                                     }
                                 }
-
-                            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
 
                             cameraProvider.unbindAll()
                             cameraProvider.bindToLifecycle(
                                 lifecycleOwner,
-                                cameraSelector,
+                                CameraSelector.DEFAULT_FRONT_CAMERA,
                                 preview,
                                 imageAnalysis
                             )
                         } catch (ex: Exception) {
-                            Timber.e("Camera preview setup failed: $ex")
+                            Timber.e("Camera binding failed: $ex")
                         }
                     }, ContextCompat.getMainExecutor(context))
                 }
-            )
+            }
         }
 
         // Motion Visualization Overlay
@@ -244,10 +267,10 @@ fun CameraStreamLayout(
                     Spacer(modifier = Modifier.weight(1f))
                     Surface(
                         color = Color.Red,
-                        shape = MaterialTheme.shapes.small
+                        shape = MaterialTheme.shapes.medium
                     ) {
                         Text(
-                            text = "MOTION",
+                            text = vaUiState.motionDetectionMode.uppercase(),
                             color = Color.White,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
@@ -261,35 +284,19 @@ fun CameraStreamLayout(
 }
 
 private fun transformRect(rect: RectF, rotation: Int): RectF {
-    val result = RectF(rect)
-    // Handle rotation based on CameraX image orientation
-    // Note: This logic assumes normalized coordinates 0..1
-    when (rotation) {
-        90 -> {
-            result.left = 1f - rect.bottom
-            result.top = rect.left
-            result.right = 1f - rect.top
-            result.bottom = rect.right
-        }
-        180 -> {
-            result.left = 1f - rect.right
-            result.top = 1f - rect.bottom
-            result.right = 1f - rect.left
-            result.bottom = 1f - rect.top
-        }
-        270 -> {
-            result.left = rect.top
-            result.top = 1f - rect.right
-            result.right = rect.bottom
-            result.bottom = 1f - rect.left
-        }
+    // 1. Start with SENSOR coordinates (normalized 0..1)
+    // For front camera, we mirror the sensor X axis FIRST.
+    // This is because the camera itself is a mirror.
+    val cx1 = 1f - rect.right
+    val cy1 = rect.top
+    val cx2 = 1f - rect.left
+    val cy2 = rect.bottom
+    
+    // 2. Now apply rotation to the mirrored sensor coordinates to match display
+    return when (rotation) {
+        90 -> RectF(1f - cy2, cx1, 1f - cy1, cx2)
+        180 -> RectF(1f - cx2, 1f - cy2, 1f - cx1, 1f - cy1)
+        270 -> RectF(cy1, 1f - cx2, cy2, 1f - cx1)
+        else -> RectF(cx1, cy1, cx2, cy2)
     }
-    
-    // Most front cameras are mirrored horizontally in preview
-    val mirroredLeft = 1f - result.right
-    val mirroredRight = 1f - result.left
-    result.left = mirroredLeft
-    result.right = mirroredRight
-    
-    return result
 }

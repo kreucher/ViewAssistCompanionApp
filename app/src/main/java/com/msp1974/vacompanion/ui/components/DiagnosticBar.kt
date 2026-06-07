@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -133,8 +134,9 @@ private fun MotionIndicator(diagnosticInfo: DiagnosticInfo) {
     val motionInterval = diagnosticInfo.motionInterval
 
     var progress by remember { mutableFloatStateOf(0f) }
+    val isFaceMode = diagnosticInfo.motionDetectionMode == "face"
 
-    if (motionDetected) {
+    if (motionDetected && isFaceMode) {
         LaunchedEffect(lastMotionTimestamp) {
             val endTime = lastMotionTimestamp + motionInterval
             while (System.currentTimeMillis() < endTime) {
@@ -154,21 +156,23 @@ private fun MotionIndicator(diagnosticInfo: DiagnosticInfo) {
         modifier = Modifier.padding(horizontal = 8.dp)
     ) {
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.DirectionsRun,
-            contentDescription = "Motion Detected",
+            imageVector = if (isFaceMode) Icons.Default.Face else Icons.AutoMirrored.Filled.DirectionsRun,
+            contentDescription = if (isFaceMode) "Face Detected" else "Motion Detected",
             tint = if (motionDetected) CustomColours.GREEN else Color.Gray,
             modifier = Modifier.size(64.dp)
         )
-        Box(modifier = Modifier.width(48.dp).height(4.dp)) {
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxSize(),
-                color = CustomColours.GREEN,
-                trackColor = Color.Gray.copy(alpha = 0.3f),
-            )
+        if (!isFaceMode) {
+            Box(modifier = Modifier.width(48.dp).height(4.dp)) {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxSize(),
+                    color = CustomColours.GREEN,
+                    trackColor = Color.Gray.copy(alpha = 0.3f),
+                )
+            }
         }
         Text(
-            text = "Motion",
+            text = if (isFaceMode) "Face" else "Motion",
             color = if (motionDetected) CustomColours.GREEN else Color.Gray,
             style = MaterialTheme.typography.bodyLarge
         )
@@ -251,7 +255,8 @@ fun DiagnosticBarPreview() {
             motionDetected = true,
             hasCamera = true,
             lastMotionTimestamp = System.currentTimeMillis(),
-            motionInterval = 10000
+            motionInterval = 10000,
+            motionDetectionMode = "face"
         )
     )
 }
@@ -268,7 +273,8 @@ fun DiagnosticBarPortraitPreview() {
             motionDetected = false,
             hasCamera = true,
             lastMotionTimestamp = System.currentTimeMillis(),
-            motionInterval = 10000
+            motionInterval = 10000,
+            motionDetectionMode = "motion"
         )
     )
 }

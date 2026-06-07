@@ -16,6 +16,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.ImageProcessing
@@ -44,23 +45,23 @@ class Camera(val context: Context, val config: APPConfig) {
     private val settleDelay: Long = 5000
     private var settleDelayJob: Job? = null
 
+    private var faceDetected = false
+    private var faceDetectionJob: Job? = null
+    
+    private var motionDetected = false
+    private var motionJob: Job? = null
+
     init {
         // Setup motion detection flow subscriber
         scope.launch {
             motionFlow.collect { result ->
-                if (result.hasMotion) {
-                    if (System.currentTimeMillis() - lastDetection > MOTION_INTERVAL) {
-                        Timber.d("Motion detected (CameraX Engine)")
-                        config.eventBroadcaster.notifyEvent(Event("motion", "", ""))
-                        lastDetection = System.currentTimeMillis()
-                    }
+                if (config.motionDetectionMode == "face") {
+                    handleFaceDetection(result.hasMotion)
+                } else {
+                    handleStandardMotion(result.hasMotion)
                 }
             }
         }
-    }
-
-    companion object {
-        const val MOTION_INTERVAL = 10000
     }
 
     fun setSensitivity(sensitivity: Int) {
@@ -178,10 +179,26 @@ class Camera(val context: Context, val config: APPConfig) {
     }
 
     private fun processImageProxy(image: ImageProxy) {
+        var shouldCloseInFinally = true
         try {
             // Check if we are in settle delay
             if (settleDelayJob != null && settleDelayJob!!.isActive) {
                 return
+            }
+
+            if (config.motionDetectionMode == "face") {
+                motionEngine.detectorMode = MotionDetectionMode.FACE_DETECTION
+                shouldCloseInFinally = false
+                scope.launch {
+                    try {
+                        motionEngine.processImageProxy(image)
+                    } finally {
+                        image.close()
+                    }
+                }
+                return
+            } else {
+                motionEngine.detectorMode = MotionDetectionMode.PIXEL_DIFF
             }
 
             val plane = image.planes[0]
@@ -213,7 +230,53 @@ class Camera(val context: Context, val config: APPConfig) {
         } catch (e: Exception) {
             Timber.e("Camera: Error processing image: $e")
         } finally {
-            image.close()
+            if (shouldCloseInFinally) {
+                image.close()
+            }
+        }
+    }
+
+    private fun handleFaceDetection(currentDetected: Boolean) {
+        if (currentDetected) {
+            if (!faceDetected) {
+                faceDetected = true
+                lastDetection = System.currentTimeMillis()
+                faceDetectionJob?.cancel()
+                Timber.d("Face detected")
+                config.eventBroadcaster.notifyEvent(Event("motion", false, true))
+            } else {
+                // Face still detected, cancel any pending "no longer detected" event
+                faceDetectionJob?.cancel()
+            }
+        } else if (faceDetected) {
+            if (faceDetectionJob == null || !faceDetectionJob!!.isActive) {
+                faceDetectionJob = scope.launch {
+                    delay(2000) // Debounce no detection
+                    faceDetected = false
+                    Timber.d("Face no longer detected")
+                    config.eventBroadcaster.notifyEvent(Event("motion", true, false))
+                }
+            }
+        }
+    }
+
+    private fun handleStandardMotion(currentDetected: Boolean) {
+        if (currentDetected) {
+            lastDetection = System.currentTimeMillis()
+            if (!motionDetected) {
+                motionDetected = true
+                motionJob?.cancel()
+                Timber.d("Motion detected (CameraX Engine)")
+                config.eventBroadcaster.notifyEvent(Event("motion", false, true))
+            }
+            // Always refresh the latch timer if motion continues
+            motionJob?.cancel()
+            motionJob = scope.launch {
+                delay(MOTION_INTERVAL.toLong())
+                motionDetected = false
+                Timber.d("Motion ended (timeout)")
+                config.eventBroadcaster.notifyEvent(Event("motion", true, false))
+            }
         }
     }
 
@@ -222,6 +285,8 @@ class Camera(val context: Context, val config: APPConfig) {
         isRunning = false
         isStarting = false
         settleDelayJob?.cancel()
+        motionJob?.cancel()
+        faceDetectionJob?.cancel()
         
         // We must unbind on main thread for CameraX
         withContext(Dispatchers.Main) {

@@ -37,12 +37,11 @@ import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import timber.log.Timber
 import javax.inject.Inject
 import androidx.core.net.toUri
-import com.msp1974.vacompanion.device.Camera
 import com.msp1974.vacompanion.device.DeviceInfo
+import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL
 
   class VADialog(
     val title: String = "AlertDialog",
@@ -91,7 +90,8 @@ data class DiagnosticInfo(
     var motionDetected: Boolean = false,
     var hasCamera: Boolean = false,
     var lastMotionTimestamp: Long = 0,
-    var motionInterval: Int = 10000
+    var motionInterval: Int = 10000,
+    var motionDetectionMode: String = "motion"
 )
 
 
@@ -131,7 +131,8 @@ data class State(
     var isNetworkConnected: Boolean = true,
     var customFiles: CustomFilesState = CustomFilesState(),
     var cameraStreamActive: Boolean = false,
-    var motionDetectionSensitivity: Int = 0
+    var motionDetectionSensitivity: Int = 0,
+    var motionDetectionMode: String = "motion"
     )
 
 @HiltViewModel
@@ -171,12 +172,14 @@ class VAViewModel @Inject constructor(
                 launchOnBoot = config.startOnBoot,
                 swipeRefreshEnabled = config.swipeRefresh,
                 motionDetectionSensitivity = config.motionDetectionSensitivity,
+                motionDetectionMode = config.motionDetectionMode,
                 // TODO: Move this into a dedicated configuration observer pattern to handle live updates.
                 diagnosticInfo = currentState.diagnosticInfo.copy(
                     show = config.diagnosticsEnabled,
                     engine = config.wakeWordEngine,
                     muted = config.isMuted,
-                    hasCamera = deviceInfo.hardware.hasFrontCamera
+                    hasCamera = deviceInfo.hardware.hasFrontCamera,
+                    motionDetectionMode = config.motionDetectionMode
                 )
             )
         }
@@ -301,19 +304,31 @@ class VAViewModel @Inject constructor(
                     )
                 }
             }
-            "motion" -> {
-                val now = System.currentTimeMillis()
+            "motionDetectionMode" -> {
+                val mode = event.newValue as String
                 _vacaState.update { currentState ->
                     currentState.copy(
+                        motionDetectionMode = mode,
                         diagnosticInfo = currentState.diagnosticInfo.copy(
-                            motionDetected = true,
-                            lastMotionTimestamp = now,
-                            motionInterval = Camera.MOTION_INTERVAL
+                            motionDetectionMode = mode
                         )
                     )
                 }
-                viewModelScope.launch {
-                    delay(Camera.MOTION_INTERVAL.toLong())
+            }
+            "motion" -> {
+                val value = event.newValue as? Boolean ?: true
+                if (value) {
+                    val now = System.currentTimeMillis()
+                    _vacaState.update { currentState ->
+                        currentState.copy(
+                            diagnosticInfo = currentState.diagnosticInfo.copy(
+                                motionDetected = true,
+                                lastMotionTimestamp = now,
+                                motionInterval = MOTION_INTERVAL
+                            )
+                        )
+                    }
+                } else {
                     _vacaState.update { currentState ->
                         currentState.copy(
                             diagnosticInfo = currentState.diagnosticInfo.copy(

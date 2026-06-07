@@ -1,10 +1,21 @@
 package com.msp1974.vacompanion.device
 
+import android.annotation.SuppressLint
 import android.graphics.RectF
+import androidx.camera.core.ImageProxy
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetectorOptions
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import kotlin.math.abs
+
+enum class MotionDetectionMode {
+    PIXEL_DIFF,
+    FACE_DETECTION
+}
 
 data class MotionResult(
     val hasMotion: Boolean,
@@ -12,23 +23,44 @@ data class MotionResult(
     val motionIntensity: Float, // 0.0 to 1.0
     val width: Int,
     val height: Int,
-    val rotation: Int = 0
+    val rotation: Int = 0,
 )
 
 class MotionDetectionEngine(
     private val detectionWidth: Int = 160,
     private val detectionHeight: Int = 120
 ) {
+    companion object {
+        const val MOTION_INTERVAL = 10000
+        init {
+            try {
+                // Reinforce log suppression before ML Kit is used in this class
+                android.system.Os.setenv("TFLITE_XNNPACK_DELEGATE_NO_LOGGING", "1", true)
+                android.system.Os.setenv("XNNPACK_LOG_LEVEL", "5", true)
+            } catch (_: Exception) {}
+        }
+    }
+
     private var backgroundModel: IntArray? = null
     private var alpha = 0.05f // Learning rate for background model
     private var motionThreshold = 25 // Luma difference threshold
     private var minBlobSize = 64 // Minimum pixels in a block to consider as motion
+
+    var detectorMode = MotionDetectionMode.PIXEL_DIFF
+
+    private val faceDetector by lazy {
+        FaceDetection.getClient(
+            FaceDetectorOptions.Builder()
+                .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+                .build()
+        )
+    }
     
     private val _motionFlow = MutableSharedFlow<MotionResult>(replay = 0)
     val motionFlow = _motionFlow.asSharedFlow()
 
     fun stepRange(value: Int, min: Int, max: Int, steps: Int = 100, invert: Boolean = true): Int {
-        return stepRange(value, min.toFloat(), max.toFloat()).toInt()
+        return stepRange(value, min.toFloat(), max.toFloat(), steps, invert).toInt()
     }
 
     fun stepRange(value: Int, min: Float, max: Float, steps: Int = 100, invert: Boolean = true): Float {
@@ -44,22 +76,68 @@ class MotionDetectionEngine(
         Timber.i("Motion sensitivity updated to $sensitivity")
         // Higher sensitivity = lower threshold
         // Map 0-100 to threshold 50-5
-        //50 - (sensitivity * 45 / 100)
         motionThreshold = stepRange(sensitivity, 5, 50)
 
         
         // Also adjust min blob size based on sensitivity
-        // 0 -> 256 pixels, 100 -> 16 pixels
-        //64 - (sensitivity * 60 / 100)
+        // 0 -> 64 pixels, 100 -> 4 pixels
         minBlobSize = stepRange(sensitivity, 4, 64)
 
         
         // Adjust background learning rate
         // Higher sensitivity = slower learning (don't absorb slow movement too fast)
-        // 0 -> 0.1, 100 -> 0.01
-        //0.15f - (sensitivity * 0.13f / 100)
+        // 0 -> 0.2, 100 -> 0.1
         alpha = stepRange(sensitivity, 0.1f, 0.2f)
 
+    }
+
+    @SuppressLint("UnsafeOptInUsageError")
+    suspend fun processImageProxy(imageProxy: ImageProxy) {
+        if (detectorMode == MotionDetectionMode.FACE_DETECTION) {
+            val mediaImage = imageProxy.image ?: return
+            val rotation = imageProxy.imageInfo.rotationDegrees
+            val inputImage = InputImage.fromMediaImage(mediaImage, rotation)
+            
+            try {
+                val faces = faceDetector.process(inputImage).await()
+                
+                // ML Kit bounding boxes are in the coordinate system of the InputImage.
+                // We normalize these to the UPRIGHT coordinate system first.
+                val imageW = inputImage.width.toFloat()
+                val imageH = inputImage.height.toFloat()
+
+                val boxes = faces.map { face ->
+                    val bounds = face.boundingBox
+                    val nx1 = bounds.left.toFloat() / imageW
+                    val ny1 = bounds.top.toFloat() / imageH
+                    val nx2 = bounds.right.toFloat() / imageW
+                    val ny2 = bounds.bottom.toFloat() / imageH
+                    
+                    // Convert normalized UPRIGHT coordinates back to normalized SENSOR coordinates
+                    // so that the UI can apply consistent transformation logic (rotation + mirroring).
+                    when (rotation) {
+                        90 -> RectF(ny1, 1f - nx2, ny2, 1f - nx1)
+                        180 -> RectF(1f - nx2, 1f - ny2, 1f - nx1, 1f - ny1)
+                        270 -> RectF(1f - ny2, nx1, 1f - ny1, nx2)
+                        else -> RectF(nx1, ny1, nx2, ny2)
+                    }
+                }
+                
+                val hasMotion = boxes.isNotEmpty()
+                val intensity = if (hasMotion) boxes.size.toFloat() / 5f else 0f 
+                
+                _motionFlow.emit(MotionResult(
+                    hasMotion, 
+                    boxes, 
+                    intensity.coerceIn(0f, 1f), 
+                    imageProxy.width, 
+                    imageProxy.height,
+                    rotation
+                ))
+            } catch (e: Exception) {
+                Timber.e(e, "Face detection failed")
+            }
+        }
     }
 
     suspend fun processFrame(luma: IntArray, frameWidth: Int, frameHeight: Int, rotation: Int = 0) {

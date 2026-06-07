@@ -188,6 +188,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
             buildJsonObject {
                 putJsonObject("sensors") {
                     put("do_not_disturb", isDoNotDisturbEnabled(context))
+                    put("motion_detected", false)
                 }
                 putJsonObject("media_player") {
                     put("playing", false)
@@ -708,7 +709,8 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
                     AudioRouteOption.STREAM
                 } else {
                     AudioRouteOption.DETECT
-                }
+                },
+                motionDetectionMode = config.motionDetectionMode
             )
             val event = Event("diagnosticStats", "", data)
             config.eventBroadcaster.notifyEvent(event)

@@ -107,6 +107,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
     private var screenOffInProgress: Boolean = false
     private var screenModeJob: Job? = null
     private var lastScreenStateEvent: Long = 0
+    private var motionDetected: Boolean = false
 
 
 
@@ -582,7 +583,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                 "screenOrientationMode" -> screen.setScreenOrientation(this@MainActivity, event.newValue as String)
                 "deviceBump" -> if (config.screenOnBump) applyScreenMode(ScreenOnMode.ON)
                 "proximity" -> if (config.screenOnProximity && event.newValue as Float == 0f) applyScreenMode(ScreenOnMode.ON)
-                "motion" -> onMotion()
+                "motion" -> onMotion(event.newValue as Boolean)
                 "showToastMessage" -> Toast.makeText(
                     this,
                     event.newValue as String,
@@ -621,14 +622,17 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         )
     }
 
-    fun onMotion() {
-        config.lastMotion = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
-        if (config.screenOnMotion && currentScreenMode() != ScreenOnMode.ON) {
-            applyScreenMode(ScreenOnMode.ON)
+    fun onMotion(isDetected: Boolean) {
+        if (isDetected && !motionDetected) {
+            config.lastMotion = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
+            if (config.screenOnMotion && currentScreenMode() != ScreenOnMode.ON) {
+                applyScreenMode(ScreenOnMode.ON)
+            }
+            if (!config.screenAlwaysOn) screen.setScreenAlwaysOn(window, true)
         } else {
-            // Stops screen from going to sleep if not set to always on
-            screen.wakeScreen()
+            if (!config.screenAlwaysOn) screen.setScreenAlwaysOn(window, false)
         }
+        motionDetected = isDetected
     }
 
     fun setDarkMode(isDark: Boolean) {

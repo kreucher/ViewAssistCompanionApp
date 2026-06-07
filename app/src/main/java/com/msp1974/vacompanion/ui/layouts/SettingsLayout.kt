@@ -7,6 +7,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DisabledByDefault
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
@@ -116,9 +117,19 @@ fun SettingsLayout(
                         menuOptions.add(
                             MenuOption(
                                 title = "View Camera Stream",
-                                subtitle = "Check the camera feed for motion detection",
+                                subtitle = "Check the camera feed for motion or face detection",
                                 icon = Icons.Default.Videocam,
                                 onClick = { currentScreen = SettingsScreen.CAMERA_STREAM }
+                            )
+                        )
+                        menuOptions.add(
+                            MenuOption(
+                                title = "Motion Detection Mode",
+                                subtitle = "Current: ${if (vaUiState.motionDetectionMode == "face") "Face Detection" else "Standard Motion"}",
+                                icon = Icons.Default.Face,
+                                onClick = {
+                                    viewModel.config.motionDetectionMode = if (viewModel.config.motionDetectionMode == "face") "motion" else "face"
+                                }
                             )
                         )
                     }

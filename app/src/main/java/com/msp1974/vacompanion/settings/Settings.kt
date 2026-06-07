@@ -219,6 +219,10 @@ class APPConfig @Inject constructor(val context: Context) {
         onValueChangedListener(property, oldValue, newValue)
     }
 
+    var motionDetectionMode: String by Delegates.observable("face") { property, oldValue, newValue ->
+        onValueChangedListener(property, oldValue, newValue) // or motion
+    }
+
     var motionDetectionSensitivity: Int by Delegates.observable(0) { property, oldValue, newValue ->
         onValueChangedListener(property, oldValue, newValue)
     }
@@ -333,6 +337,7 @@ class APPConfig @Inject constructor(val context: Context) {
         settings["screen_on"]?.jsonPrimitive?.booleanOrNull?.let { screenOn = it }
         settings["enable_network_recovery"]?.jsonPrimitive?.booleanOrNull?.let { enableNetworkRecovery = it }
         settings["enable_motion_detection"]?.jsonPrimitive?.booleanOrNull?.let { enableMotionDetection = it }
+        settings["motion_detection_mode"]?.jsonPrimitive?.contentOrNull?.let { motionDetectionMode = it }
         settings["motion_detection_sensitivity"]?.jsonPrimitive?.intOrNull?.let { motionDetectionSensitivity = it }
         settings["screen_timeout"]?.jsonPrimitive?.intOrNull?.let { screenTimeout = it * 1000 }
         settings["bump_sensitivity"]?.jsonPrimitive?.floatOrNull?.let { bumpSensitivity = it / 10 }
