@@ -624,7 +624,6 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
 
     fun onMotion(isDetected: Boolean) {
         if (isDetected && !motionDetected) {
-            config.lastMotion = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
             if (config.screenOnMotion && currentScreenMode() != ScreenOnMode.ON) {
                 applyScreenMode(ScreenOnMode.ON)
             }

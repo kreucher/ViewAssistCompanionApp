@@ -19,6 +19,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import timber.log.Timber
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 
 
 class SatelliteCustomEventHandler(
@@ -126,9 +128,9 @@ class SatelliteCustomEventHandler(
                     }
                 }
             }
-            "enableMotionDetection" -> {
-                val state = event.newValue as Boolean
-                if (state) {
+            "motionDetectionMode" -> {
+                val mode = event.newValue as String
+                if (mode != "none") {
                     if (!config.cameraStreamActive) {
                         satellite.motionTask.startCamera()
                     }
@@ -138,6 +140,7 @@ class SatelliteCustomEventHandler(
             }
             "motion" -> {
                 val value = event.newValue as? Boolean ?: true
+                config.lastMotion = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
                 satellite.sendStatus(
                     buildJsonObject {
                         putJsonObject("sensors", {
@@ -145,16 +148,6 @@ class SatelliteCustomEventHandler(
                             if (value) {
                                 put("last_motion", config.lastMotion)
                             }
-                        })
-                    }
-                )
-            }
-            "lastMotion" -> {
-                satellite.sendStatus(
-                    buildJsonObject {
-                        putJsonObject("sensors", {
-                            put("motion_detected", true)
-                            put("last_motion", config.lastMotion)
                         })
                     }
                 )

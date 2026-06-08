@@ -243,7 +243,10 @@ class Camera(val context: Context, val config: APPConfig) {
                 lastDetection = System.currentTimeMillis()
                 faceDetectionJob?.cancel()
                 Timber.d("Face detected")
-                config.eventBroadcaster.notifyEvent(Event("motion", false, true))
+                config.eventBroadcaster.notifyEvent(Event("motion",
+                    oldValue = false,
+                    newValue = true
+                ))
             } else {
                 // Face still detected, cancel any pending "no longer detected" event
                 faceDetectionJob?.cancel()
@@ -254,7 +257,10 @@ class Camera(val context: Context, val config: APPConfig) {
                     delay(2000) // Debounce no detection
                     faceDetected = false
                     Timber.d("Face no longer detected")
-                    config.eventBroadcaster.notifyEvent(Event("motion", true, false))
+                    config.eventBroadcaster.notifyEvent(Event("motion",
+                        oldValue = true,
+                        newValue = false
+                    ))
                 }
             }
         }
@@ -267,7 +273,10 @@ class Camera(val context: Context, val config: APPConfig) {
                 motionDetected = true
                 motionJob?.cancel()
                 Timber.d("Motion detected (CameraX Engine)")
-                config.eventBroadcaster.notifyEvent(Event("motion", false, true))
+                config.eventBroadcaster.notifyEvent(Event("motion",
+                    oldValue = false,
+                    newValue = true
+                ))
             }
             // Always refresh the latch timer if motion continues
             motionJob?.cancel()
@@ -275,7 +284,10 @@ class Camera(val context: Context, val config: APPConfig) {
                 delay(MOTION_INTERVAL.toLong())
                 motionDetected = false
                 Timber.d("Motion ended (timeout)")
-                config.eventBroadcaster.notifyEvent(Event("motion", true, false))
+                config.eventBroadcaster.notifyEvent(Event("motion",
+                    oldValue = true,
+                    newValue = false
+                ))
             }
         }
     }
@@ -298,5 +310,8 @@ class Camera(val context: Context, val config: APPConfig) {
             cameraProvider = null
             imageAnalysis = null
         }
+
+        motionDetected = false
+        config.eventBroadcaster.notifyEvent(Event("motion", oldValue = false, newValue = false))
     }
 }

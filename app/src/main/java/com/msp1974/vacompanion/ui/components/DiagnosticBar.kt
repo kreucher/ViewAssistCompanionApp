@@ -75,7 +75,7 @@ fun DiagnosticBar(
                         disabledText = "Off",
                         disabled = diagnosticInfo.wakeWord == "none"
                     )
-                    if (diagnosticInfo.hasCamera) {
+                    if (diagnosticInfo.hasCamera && diagnosticInfo.motionDetectionMode != "none") {
                         MotionIndicator(diagnosticInfo)
                     }
                 }
@@ -89,7 +89,7 @@ fun DiagnosticBar(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (diagnosticInfo.hasCamera) {
+                if (diagnosticInfo.hasCamera && diagnosticInfo.motionDetectionMode != "none") {
                     Column(
                         modifier = Modifier.padding(end = 10.dp)
                     ) {
@@ -130,25 +130,7 @@ fun DiagnosticBar(
 @Composable
 private fun MotionIndicator(diagnosticInfo: DiagnosticInfo) {
     val motionDetected = diagnosticInfo.motionDetected
-    val lastMotionTimestamp = diagnosticInfo.lastMotionTimestamp
-    val motionInterval = diagnosticInfo.motionInterval
-
-    var progress by remember { mutableFloatStateOf(0f) }
     val isFaceMode = diagnosticInfo.motionDetectionMode == "face"
-
-    if (motionDetected && isFaceMode) {
-        LaunchedEffect(lastMotionTimestamp) {
-            val endTime = lastMotionTimestamp + motionInterval
-            while (System.currentTimeMillis() < endTime) {
-                val remaining = endTime - System.currentTimeMillis()
-                progress = (remaining.toFloat() / motionInterval).coerceIn(0f, 1f)
-                delay(50)
-            }
-            progress = 0f
-        }
-    } else {
-        progress = 0f
-    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -161,16 +143,6 @@ private fun MotionIndicator(diagnosticInfo: DiagnosticInfo) {
             tint = if (motionDetected) CustomColours.GREEN else Color.Gray,
             modifier = Modifier.size(64.dp)
         )
-        if (!isFaceMode) {
-            Box(modifier = Modifier.width(48.dp).height(4.dp)) {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxSize(),
-                    color = CustomColours.GREEN,
-                    trackColor = Color.Gray.copy(alpha = 0.3f),
-                )
-            }
-        }
         Text(
             text = if (isFaceMode) "Face" else "Motion",
             color = if (motionDetected) CustomColours.GREEN else Color.Gray,
