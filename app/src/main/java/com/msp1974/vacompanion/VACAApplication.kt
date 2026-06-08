@@ -29,6 +29,13 @@ class VACAApplication: Application(), CameraXConfig.Provider {
     override fun onCreate() {
         super.onCreate()
 
+        try {
+            // Suppress TFLITE/XNNPack spam logs before any ML Kit/TFLite components load
+            Os.setenv("TFLITE_XNNPACK_DELEGATE_NO_LOGGING", "1", true)
+            Os.setenv("XNNPACK_LOG_LEVEL", "0", true)
+            Os.setenv("TFLITE_LOG_LEVEL", "0", true)
+        } catch (_: Exception) {}
+
         Thread.setDefaultUncaughtExceptionHandler(AppExceptionHandler(this.applicationContext))
 
         disableSSLCertificateChecking()

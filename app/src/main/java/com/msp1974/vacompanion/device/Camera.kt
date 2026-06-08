@@ -16,17 +16,19 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
-import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL
+import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL_TIMEOUT
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.utils.Event
+import com.msp1974.vacompanion.utils.EventListener
 import com.msp1974.vacompanion.utils.ImageProcessing
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.SharedFlow
 import timber.log.Timber
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.time.Duration.Companion.milliseconds
 
-class Camera(val context: Context, val config: APPConfig) {
+class Camera(val context: Context, val config: APPConfig) : EventListener {
 
     private val job = SupervisorJob()
     private val scope = CoroutineScope(job + Dispatchers.IO)
@@ -46,12 +48,10 @@ class Camera(val context: Context, val config: APPConfig) {
     private var settleDelayJob: Job? = null
 
     private var faceDetected = false
-    private var faceDetectionJob: Job? = null
-    
     private var motionDetected = false
-    private var motionJob: Job? = null
 
     init {
+        config.eventBroadcaster.addListener(this)
         // Setup motion detection flow subscriber
         scope.launch {
             motionFlow.collect { result ->
@@ -62,10 +62,6 @@ class Camera(val context: Context, val config: APPConfig) {
                 }
             }
         }
-    }
-
-    fun setSensitivity(sensitivity: Int) {
-        motionEngine.setSensitivity(sensitivity)
     }
 
     fun startCamera() {
@@ -86,7 +82,6 @@ class Camera(val context: Context, val config: APPConfig) {
         Timber.i("Starting CameraX for motion detection")
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-        setSensitivity(config.motionDetectionSensitivity)
         cameraProviderFuture.addListener({
             try {
                 cameraProvider = cameraProviderFuture.get()
@@ -96,11 +91,12 @@ class Camera(val context: Context, val config: APPConfig) {
                 isStarting = false
                 
                 // Settle motion detection to reduce false detections at start
+                // Face detection can settle faster than pixel diff
+                val delayMs = if (config.motionDetectionMode == "face") 1500L else settleDelay
                 settleDelayJob?.cancel()
                 settleDelayJob = scope.launch {
-                    delay(settleDelay)
+                    delay(delayMs.milliseconds)
                 }
-                
             } catch (e: Exception) {
                 Timber.e("Camera: Error starting CameraX: $e")
                 isRunning = false
@@ -113,8 +109,11 @@ class Camera(val context: Context, val config: APPConfig) {
     private fun bindCameraUseCases(lifecycleOwner: LifecycleOwner) {
         val cameraProvider = cameraProvider ?: return
 
+        // Use higher resolution for face detection (better reliability), lower for pixel diff motion (better performance)
+        val targetResolution = Size(320, 240)
+
         val resolutionSelector = ResolutionSelector.Builder()
-            .setResolutionStrategy(ResolutionStrategy(Size(320, 240), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
+            .setResolutionStrategy(ResolutionStrategy(targetResolution, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
             .build()
 
         val analysisBuilder = ImageAnalysis.Builder()
@@ -122,7 +121,7 @@ class Camera(val context: Context, val config: APPConfig) {
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
             .setResolutionSelector(resolutionSelector)
 
-        // Interop for low-light optimizations (Antibanding)
+        // Interop for optimizations (Antibanding)
         Camera2Interop.Extender(analysisBuilder).apply {
             setCaptureRequestOption(CaptureRequest.CONTROL_AE_ANTIBANDING_MODE, CaptureRequest.CONTROL_AE_ANTIBANDING_MODE_AUTO)
         }
@@ -139,7 +138,7 @@ class Camera(val context: Context, val config: APPConfig) {
             cameraProvider.unbindAll()
             
             // Check if we should actually be running
-            if (!config.enableMotionDetection || config.cameraStreamActive) {
+            if (config.motionDetectionMode == "none" || config.cameraStreamActive) {
                 Timber.w("Camera about to bind but motion detection disabled or stream active, skipping")
                 isRunning = false
                 isStarting = false
@@ -152,24 +151,18 @@ class Camera(val context: Context, val config: APPConfig) {
                 imageAnalysis
             )
             
-            // Apply low-light optimizations (Exposure compensation)
+            // Apply light optimizations if needed, but avoid forcing max exposure which ruins face detection
             val cameraControl = camera.cameraControl
             val cameraInfo = camera.cameraInfo
             val camera2CameraInfo = Camera2CameraInfo.from(cameraInfo)
             
-            val range = camera2CameraInfo.getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
-            if (range != null && (range.lower != 0 || range.upper != 0)) {
-                cameraControl.setExposureCompensationIndex(range.upper)
-            }
-            
-            // Try to enable Night Mode (Scene Mode) via Interop if supported
-            val sceneModes = camera2CameraInfo.getCameraCharacteristic(CameraCharacteristics.CONTROL_AVAILABLE_SCENE_MODES)
-            if (sceneModes?.contains(CaptureRequest.CONTROL_SCENE_MODE_NIGHT) == true) {
-                // To set scene mode, we need to set CONTROL_MODE to USE_SCENE_MODE as well
-                // This is best done via Interop on the UseCase
-                val currentExtender = Camera2Interop.Extender(analysisBuilder)
-                currentExtender.setCaptureRequestOption(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_USE_SCENE_MODE)
-                currentExtender.setCaptureRequestOption(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_NIGHT)
+            // Use a more balanced exposure boost if in low light and NOT in face mode
+            if (config.motionDetectionMode != "face") {
+                val range = camera2CameraInfo.getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+                if (range != null && range.upper > 0) {
+                    // Just a small boost for pixel motion if it's dark, not full max
+                    cameraControl.setExposureCompensationIndex(range.upper / 2)
+                }
             }
             
             Timber.d("CameraX bound to lifecycle successfully")
@@ -197,7 +190,7 @@ class Camera(val context: Context, val config: APPConfig) {
                     }
                 }
                 return
-            } else {
+            } else if (config.motionDetectionMode == "face") {
                 motionEngine.detectorMode = MotionDetectionMode.PIXEL_DIFF
             }
 
@@ -237,58 +230,93 @@ class Camera(val context: Context, val config: APPConfig) {
     }
 
     private fun handleFaceDetection(currentDetected: Boolean) {
+        var sendBroadcast = false
         if (currentDetected) {
+            lastDetection = System.currentTimeMillis()
             if (!faceDetected) {
+                Timber.i("Face detected")
                 faceDetected = true
-                lastDetection = System.currentTimeMillis()
-                faceDetectionJob?.cancel()
-                Timber.d("Face detected")
-                config.eventBroadcaster.notifyEvent(Event("motion",
+                sendBroadcast = true
+            }
+        } else {
+            if (faceDetected && (System.currentTimeMillis() - lastDetection) > 2000) {
+                Timber.i("Face no longer detected")
+                faceDetected = false
+                sendBroadcast = true
+            }
+        }
+
+        if (sendBroadcast) {
+            config.eventBroadcaster.notifyEvent(
+                Event(
+                    "motion",
                     oldValue = false,
-                    newValue = true
-                ))
-            } else {
-                // Face still detected, cancel any pending "no longer detected" event
-                faceDetectionJob?.cancel()
-            }
-        } else if (faceDetected) {
-            if (faceDetectionJob == null || !faceDetectionJob!!.isActive) {
-                faceDetectionJob = scope.launch {
-                    delay(2000) // Debounce no detection
-                    faceDetected = false
-                    Timber.d("Face no longer detected")
-                    config.eventBroadcaster.notifyEvent(Event("motion",
-                        oldValue = true,
-                        newValue = false
-                    ))
-                }
-            }
+                    newValue = faceDetected
+                )
+            )
         }
     }
 
     private fun handleStandardMotion(currentDetected: Boolean) {
+        var sendBroadcast = false
         if (currentDetected) {
             lastDetection = System.currentTimeMillis()
             if (!motionDetected) {
+                Timber.d("Motion detected")
                 motionDetected = true
-                motionJob?.cancel()
-                Timber.d("Motion detected (CameraX Engine)")
-                config.eventBroadcaster.notifyEvent(Event("motion",
-                    oldValue = false,
-                    newValue = true
-                ))
+                sendBroadcast = true
             }
-            // Always refresh the latch timer if motion continues
-            motionJob?.cancel()
-            motionJob = scope.launch {
-                delay(MOTION_INTERVAL.toLong())
+        } else {
+            if (motionDetected && (System.currentTimeMillis() - lastDetection) > MOTION_INTERVAL_TIMEOUT) {
+                Timber.i("Motion no longer detected")
                 motionDetected = false
-                Timber.d("Motion ended (timeout)")
-                config.eventBroadcaster.notifyEvent(Event("motion",
-                    oldValue = true,
-                    newValue = false
-                ))
+                sendBroadcast = true
             }
+        }
+
+
+        if (sendBroadcast) {
+            config.eventBroadcaster.notifyEvent(
+                Event(
+                    "motion",
+                    oldValue = false,
+                    newValue = motionDetected
+                )
+            )
+        }
+    }
+
+    override fun onEventTriggered(event: Event) {
+        when (event.eventName) {
+            "motionDetectionMode" -> {
+                if (isRunning && event.newValue != event.oldValue) {
+                    scope.launch {
+                        Timber.i("Camera: Restarting to apply new motion detection mode: ${event.newValue}")
+                        stopCamera()
+                        delay(500)
+                        startCamera()
+                    }
+                }
+            }
+            "enableMotionDetection" -> {
+                if (event.newValue == true && !isRunning) {
+                    startCamera()
+                } else if (event.newValue == false && isRunning) {
+                    scope.launch { stopCamera() }
+                }
+            }
+            "cameraStreamActive" -> {
+                if (event.newValue == false && !isRunning && config.enableMotionDetection) {
+                    // Stream closed, background motion detection can resume
+                    Timber.i("Camera: Resuming background motion detection")
+                    startCamera()
+                } else if (event.newValue == true && isRunning) {
+                    // Stream opened, stop background motion detection to free camera
+                    Timber.i("Camera: Stopping background motion detection for stream")
+                    scope.launch { stopCamera() }
+                }
+            }
+            "motionDetectionSensitivity" -> motionEngine.setSensitivity(event.newValue as Int)
         }
     }
 
@@ -297,9 +325,7 @@ class Camera(val context: Context, val config: APPConfig) {
         isRunning = false
         isStarting = false
         settleDelayJob?.cancel()
-        motionJob?.cancel()
-        faceDetectionJob?.cancel()
-        
+
         // We must unbind on main thread for CameraX
         withContext(Dispatchers.Main) {
             try {
@@ -312,6 +338,16 @@ class Camera(val context: Context, val config: APPConfig) {
         }
 
         motionDetected = false
+        faceDetected = false
+        lastDetection = 0
+        motionEngine.reset()
+        
         config.eventBroadcaster.notifyEvent(Event("motion", oldValue = false, newValue = false))
+    }
+
+    fun release() {
+        config.eventBroadcaster.removeListener(this)
+        motionEngine.close()
+        job.cancel()
     }
 }

@@ -48,6 +48,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.time.Duration.Companion.seconds
 
 interface ISatelliteEvent {
     fun onEvent(event: String, data: JsonObject)
@@ -234,6 +235,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
             eventHandler.stop()
             wakeWordHandler?.stop()
             motionTask.stopCamera()
+            motionTask.release()
         }.join()
 
         stopSensors()
@@ -658,7 +660,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         }
     }
 
-    fun startSensors() {
+    suspend fun startSensors() {
         sensorRunner = Sensors(context, config, deviceInfo, object : SensorUpdatesCallback {
             override fun onUpdate(data: MutableMap<String, Any>) {
                 val data = buildJsonObject {
@@ -684,7 +686,8 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
             }
         })
         // Start motion sensor
-        if (config.enableMotionDetection) {
+        if (config.motionDetectionMode != "none") {
+            delay(2.seconds)  // Add delay to camera start to let app start up
             motionTask.startCamera()
         }
     }

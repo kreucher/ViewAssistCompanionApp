@@ -41,7 +41,7 @@ import timber.log.Timber
 import javax.inject.Inject
 import androidx.core.net.toUri
 import com.msp1974.vacompanion.device.DeviceInfo
-import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL
+import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL_TIMEOUT
 
   class VADialog(
     val title: String = "AlertDialog",
@@ -324,7 +324,7 @@ class VAViewModel @Inject constructor(
                             diagnosticInfo = currentState.diagnosticInfo.copy(
                                 motionDetected = true,
                                 lastMotionTimestamp = now,
-                                motionInterval = MOTION_INTERVAL
+                                motionInterval = MOTION_INTERVAL_TIMEOUT
                             )
                         )
                     }

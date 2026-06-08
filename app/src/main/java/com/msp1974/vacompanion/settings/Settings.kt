@@ -219,7 +219,7 @@ class APPConfig @Inject constructor(val context: Context) {
         onValueChangedListener(property, oldValue, newValue)
     }
 
-    var motionDetectionMode: String by Delegates.observable("face") { property, oldValue, newValue ->
+    var motionDetectionMode: String by Delegates.observable("none") { property, oldValue, newValue ->
         onValueChangedListener(property, oldValue, newValue) // or motion
     }
 

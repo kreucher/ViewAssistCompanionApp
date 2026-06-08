@@ -161,9 +161,6 @@ class SatelliteCustomEventHandler(
                     }
                 )
             }
-            "motionDetectionSensitivity" -> {
-                satellite.motionTask.setSensitivity(event.newValue as Int)
-            }
             "musicPlayerPlayingStatus" -> {
                 satellite.sendStatus(
                     buildJsonObject {

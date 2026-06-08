@@ -89,6 +89,7 @@ fun CameraStreamLayout(
             viewModel.setCameraStreamActive(false)
             hideJob?.cancel()
             executor.shutdown()
+            motionEngine.close()
             // Explicitly unbind everything to prevent CAMERA_DISCONNECTED errors on exit
             runCatching {
                 cameraProviderRef.value?.unbindAll()
@@ -274,7 +275,7 @@ fun CameraStreamLayout(
                             color = Color.White,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
                 }

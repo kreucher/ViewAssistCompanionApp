@@ -31,12 +31,13 @@ class MotionDetectionEngine(
     private val detectionHeight: Int = 120
 ) {
     companion object {
-        const val MOTION_INTERVAL = 10000
+        const val MOTION_INTERVAL_TIMEOUT = 5000
         init {
             try {
                 // Reinforce log suppression before ML Kit is used in this class
                 android.system.Os.setenv("TFLITE_XNNPACK_DELEGATE_NO_LOGGING", "1", true)
-                android.system.Os.setenv("XNNPACK_LOG_LEVEL", "5", true)
+                android.system.Os.setenv("XNNPACK_LOG_LEVEL", "0", true)
+                android.system.Os.setenv("TFLITE_LOG_LEVEL", "0", true)
             } catch (_: Exception) {}
         }
     }
@@ -48,12 +49,17 @@ class MotionDetectionEngine(
 
     var detectorMode = MotionDetectionMode.PIXEL_DIFF
 
-    private val faceDetector by lazy {
-        FaceDetection.getClient(
-            FaceDetectorOptions.Builder()
-                .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-                .build()
-        )
+    private var faceDetector: com.google.mlkit.vision.face.FaceDetector? = null
+
+    private fun getFaceDetector(): com.google.mlkit.vision.face.FaceDetector {
+        if (faceDetector == null) {
+            faceDetector = FaceDetection.getClient(
+                FaceDetectorOptions.Builder()
+                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+                    .build()
+            )
+        }
+        return faceDetector!!
     }
     
     private val _motionFlow = MutableSharedFlow<MotionResult>(replay = 0)
@@ -78,17 +84,26 @@ class MotionDetectionEngine(
         // Map 0-100 to threshold 50-5
         motionThreshold = stepRange(sensitivity, 5, 50)
 
-        
+
         // Also adjust min blob size based on sensitivity
         // 0 -> 64 pixels, 100 -> 4 pixels
         minBlobSize = stepRange(sensitivity, 4, 64)
 
-        
+
         // Adjust background learning rate
         // Higher sensitivity = slower learning (don't absorb slow movement too fast)
         // 0 -> 0.2, 100 -> 0.1
         alpha = stepRange(sensitivity, 0.1f, 0.2f)
 
+    }
+
+    fun reset() {
+        backgroundModel = null
+    }
+
+    fun close() {
+        faceDetector?.close()
+        faceDetector = null
     }
 
     @SuppressLint("UnsafeOptInUsageError")
@@ -99,7 +114,7 @@ class MotionDetectionEngine(
             val inputImage = InputImage.fromMediaImage(mediaImage, rotation)
             
             try {
-                val faces = faceDetector.process(inputImage).await()
+                val faces = getFaceDetector().process(inputImage).await()
                 
                 // ML Kit bounding boxes are in the coordinate system of the InputImage.
                 // We normalize these to the UPRIGHT coordinate system first.
