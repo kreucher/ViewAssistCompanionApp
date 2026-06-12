@@ -15,12 +15,32 @@ class WebViewGestureDetector {
 
     private val SWIPE_THRESHOLD = 150f
     private val L_LEG_THRESHOLD = 100f
+    private val BOTTOM_EDGE_THRESHOLD_PX = 30f
 
     enum class Direction {
-        LEFT, RIGHT, UP, DOWN
+        LEFT, RIGHT, UP, DOWN, BOTTOM_UP, LEFT_UP, LEFT_DOWN, RIGHT_UP, RIGHT_DOWN, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT
     }
 
-    fun onTouchEvent(event: MotionEvent) {
+    data class GestureEvent(
+        val direction: Direction,
+        val pointers: Int,
+        val startX: Float,
+        val startY: Float
+    )
+
+
+    interface OnGestureListener {
+        fun onSwipe(event: GestureEvent)
+        fun onLGesture(firstDir: Direction, secondDir: Direction)
+    }
+
+    private var listener: OnGestureListener? = null
+
+    fun setOnGestureListener(listener: OnGestureListener) {
+        this.listener = listener
+    }
+
+    fun onTouchEvent(event: MotionEvent, viewHeight: Int) {
         val action = event.actionMasked
         val pointerCount = event.pointerCount
 
@@ -59,18 +79,21 @@ class WebViewGestureDetector {
                             Direction.LEFT, Direction.RIGHT -> {
                                 if (abs(dpy) > L_LEG_THRESHOLD && abs(dpy) > abs(dpx) * 2) {
                                     isLGestureDetected = true
-                                    val secondDir = if (dpy > 0) "DOWN" else "UP"
-                                    Timber.i("L-Shaped Gesture detected: $firstLegDirection then $secondDir")
+                                    val secondDir = if (dpy > 0) Direction.DOWN else Direction.UP
+                                    Timber.d("L-Shaped Gesture detected: $firstLegDirection then $secondDir")
+                                    listener?.onLGesture(firstLegDirection!!, secondDir)
                                 }
                             }
                             Direction.UP, Direction.DOWN -> {
                                 if (abs(dpx) > L_LEG_THRESHOLD && abs(dpx) > abs(dpy) * 2) {
                                     isLGestureDetected = true
-                                    val secondDir = if (dpx > 0) "RIGHT" else "LEFT"
-                                    Timber.i("L-Shaped Gesture detected: $firstLegDirection then $secondDir")
+                                    val secondDir = if (dpx > 0) Direction.RIGHT else Direction.LEFT
+                                    Timber.d("L-Shaped Gesture detected: $firstLegDirection then $secondDir")
+                                    listener?.onLGesture(firstLegDirection!!, secondDir)
                                 }
                             }
                             null -> {}
+                            else -> {}
                         }
                     }
                 }
@@ -79,10 +102,8 @@ class WebViewGestureDetector {
                 if (!isLGestureDetected) {
                     val dx = event.x - startX
                     val dy = event.y - startY
-                    if (maxPointers == 1) {
-                        detectSwipe(dx, dy, 1)
-                    } else if (maxPointers in 2..3) {
-                        detectSwipe(dx, dy, maxPointers)
+                    if (maxPointers in 1..3) {
+                        detectSwipe(dx, dy, maxPointers, startX, startY, viewHeight)
                     }
                 }
                 maxPointers = 0
@@ -90,15 +111,23 @@ class WebViewGestureDetector {
         }
     }
 
-    private fun detectSwipe(dx: Float, dy: Float, pointers: Int) {
+    private fun detectSwipe(dx: Float, dy: Float, pointers: Int, startX: Float, startY: Float, viewHeight: Int) {
         if (abs(dx) > SWIPE_THRESHOLD || abs(dy) > SWIPE_THRESHOLD) {
-            val direction = if (abs(dx) > abs(dy)) {
-                if (dx > 0) "RIGHT" else "LEFT"
+            var direction = if (abs(dx) > abs(dy)) {
+                if (dx > 0) Direction.RIGHT else Direction.LEFT
             } else {
-                if (dy > 0) "DOWN" else "UP"
+                if (dy > 0) Direction.DOWN else Direction.UP
             }
+            
             val prefix = if (pointers == 1) "Single finger" else "$pointers fingers"
-            Timber.i("$prefix swipe $direction")
+            Timber.d("$prefix swipe $direction")
+
+            if (pointers == 2 && direction == Direction.UP && startY > (viewHeight - BOTTOM_EDGE_THRESHOLD_PX)) {
+                direction = Direction.BOTTOM_UP
+                Timber.d("2-finger swipe up from bottom detected")
+            }
+            
+            listener?.onSwipe(GestureEvent(direction, pointers, startX, startY))
         }
     }
 }

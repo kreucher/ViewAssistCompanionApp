@@ -42,6 +42,7 @@ import javax.inject.Inject
 import androidx.core.net.toUri
 import com.msp1974.vacompanion.device.DeviceInfo
 import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL_TIMEOUT
+import com.msp1974.vacompanion.utils.WebViewGestureDetector
 
   class VADialog(
     val title: String = "AlertDialog",
@@ -244,14 +245,7 @@ class VAViewModel @Inject constructor(
                 }
             }
             "pairedDeviceID" -> buildAppInfo()
-            "openSettings" -> {
-                _vacaState.update { currentState ->
-                    currentState.copy(
-                        showMenu = true,
-                        menuOpenedByAction = true
-                    )
-                }
-            }
+            "openSettings" -> onOpenSettingsAction()
             "darkMode" -> {
                 _vacaState.update { currentState ->
                     currentState.copy(
@@ -341,7 +335,7 @@ class VAViewModel @Inject constructor(
             else -> consumed = false
         }
         if (consumed) {
-            Timber.i("ViewModel - Event: ${event.eventName} - ${event.newValue}")
+            Timber.d("ViewModel - Event: ${event.eventName} - ${event.newValue}")
         }
     }
 
@@ -372,6 +366,19 @@ class VAViewModel @Inject constructor(
         _vacaState.update { currentState ->
             currentState.copy(
                 alertDialog = alert,
+            )
+        }
+    }
+
+    fun onShowDiagnostics(show: Boolean) {
+        config.diagnosticsEnabled = show
+    }
+
+    fun onOpenSettingsAction() {
+        _vacaState.update { currentState ->
+            currentState.copy(
+                showMenu = true,
+                menuOpenedByAction = true
             )
         }
     }
@@ -421,6 +428,10 @@ class VAViewModel @Inject constructor(
             NetworkStatus.Available -> setStatusMessage(getString(application.applicationContext, R.string.status_waiting_for_connection))
         }
         buildAppInfo()
+    }
+
+    fun onGesture(gestureEvent: WebViewGestureDetector.GestureEvent) {
+        config.eventBroadcaster.notifyEvent(Event("gesture", "", gestureEvent))
     }
 
     private fun buildAppInfo() {

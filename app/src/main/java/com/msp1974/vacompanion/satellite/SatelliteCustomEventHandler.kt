@@ -7,6 +7,7 @@ import com.msp1974.vacompanion.device.VolumeManager
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.EventListener
 import com.msp1974.vacompanion.utils.SoundControl
+import com.msp1974.vacompanion.utils.WebViewGestureDetector
 import com.msp1974.vacompanion.wyoming.WyomingInfoBuilder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -184,6 +185,19 @@ class SatelliteCustomEventHandler(
             }
             "updateCustomFiles" -> {
                 satellite.sendCapabilities()
+            }
+            "gesture" -> {
+                val data = event.newValue as? WebViewGestureDetector.GestureEvent
+                if (data != null) {
+                    satellite.sendCustomEvent("gesture",
+                        buildJsonObject {
+                            put("gesture", data.direction.toString().lowercase())
+                            put("touch_points", data.pointers)
+                            put("x", data.startX)
+                            put("y", data.startX)
+                        }
+                    )
+                }
             }
             else -> consumed = false
         }

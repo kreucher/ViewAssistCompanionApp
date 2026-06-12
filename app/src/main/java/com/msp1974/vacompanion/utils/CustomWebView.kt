@@ -40,6 +40,10 @@ class CustomWebView @JvmOverloads constructor(
         }
     }
 
+    fun setOnGestureListener(listener: WebViewGestureDetector.OnGestureListener) {
+        gestureDetector.setOnGestureListener(listener)
+    }
+
     fun initialise(config: APPConfig, customWebViewClient: CustomWebViewClient) {
         log.d("Initialising WebView")
 
@@ -100,7 +104,7 @@ class CustomWebView @JvmOverloads constructor(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        gestureDetector.onTouchEvent(event)
+        gestureDetector.onTouchEvent(event, height)
         if (requestDisallow) {
             requestDisallowInterceptTouchEvent(true)
         }
