@@ -50,6 +50,8 @@ class Camera(val context: Context, val config: APPConfig) : EventListener {
     private var faceDetected = false
     private var motionDetected = false
 
+    private var lastFrameTime = 0L
+
     init {
         config.eventBroadcaster.addListener(this)
         // Setup motion detection flow subscriber
@@ -172,6 +174,13 @@ class Camera(val context: Context, val config: APPConfig) : EventListener {
     }
 
     private fun processImageProxy(image: ImageProxy) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastFrameTime < 250) {
+            image.close()
+            return
+        }
+        lastFrameTime = currentTime
+
         var shouldCloseInFinally = true
         try {
             // Check if we are in settle delay
@@ -190,7 +199,7 @@ class Camera(val context: Context, val config: APPConfig) : EventListener {
                     }
                 }
                 return
-            } else if (config.motionDetectionMode == "face") {
+            } else if (config.motionDetectionMode == "motion") {
                 motionEngine.detectorMode = MotionDetectionMode.PIXEL_DIFF
             }
 
@@ -262,7 +271,7 @@ class Camera(val context: Context, val config: APPConfig) : EventListener {
         if (currentDetected) {
             lastDetection = System.currentTimeMillis()
             if (!motionDetected) {
-                Timber.d("Motion detected")
+                Timber.i("Motion detected")
                 motionDetected = true
                 sendBroadcast = true
             }

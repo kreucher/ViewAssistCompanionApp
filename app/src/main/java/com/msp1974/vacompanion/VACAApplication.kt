@@ -29,12 +29,7 @@ class VACAApplication: Application(), CameraXConfig.Provider {
     override fun onCreate() {
         super.onCreate()
 
-        try {
-            // Suppress TFLITE/XNNPack spam logs before any ML Kit/TFLite components load
-            Os.setenv("TFLITE_XNNPACK_DELEGATE_NO_LOGGING", "1", true)
-            Os.setenv("XNNPACK_LOG_LEVEL", "0", true)
-            Os.setenv("TFLITE_LOG_LEVEL", "0", true)
-        } catch (_: Exception) {}
+        suppressMLKitSpam()
 
         Thread.setDefaultUncaughtExceptionHandler(AppExceptionHandler(this.applicationContext))
 
@@ -55,6 +50,21 @@ class VACAApplication: Application(), CameraXConfig.Provider {
             getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
 
+    }
+
+    private fun suppressMLKitSpam() {
+        try {
+            // Suppress TFLITE/XNNPack spam logs before any ML Kit/TFLite components load
+            Os.setenv("TFLITE_XNNPACK_DELEGATE_NO_LOGGING", "1", true)
+            Os.setenv("XNNPACK_LOG_LEVEL", "0", true)
+            Os.setenv("TFLITE_LOG_LEVEL", "0", true)
+            Os.setenv("TF_CPP_MIN_LOG_LEVEL", "3", true) // 3 = FATAL
+
+            // Native ML Kit tags often check these environment variables as a fallback for system properties
+            Os.setenv("log.tag.FaceDetectorV2Jni", "ERROR", true)
+            Os.setenv("log.tag.ThickFaceDetector", "ERROR", true)
+            Os.setenv("log.tag.Vision", "ERROR", true)
+        } catch (_: Exception) {}
     }
 
     override fun getCameraXConfig(): CameraXConfig {

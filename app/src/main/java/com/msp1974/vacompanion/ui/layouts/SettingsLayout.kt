@@ -122,16 +122,6 @@ fun SettingsLayout(
                                 onClick = { currentScreen = SettingsScreen.CAMERA_STREAM }
                             )
                         )
-                        menuOptions.add(
-                            MenuOption(
-                                title = "Motion Detection Mode",
-                                subtitle = "Current: ${if (vaUiState.motionDetectionMode == "face") "Face Detection" else "Standard Motion"}",
-                                icon = Icons.Default.Face,
-                                onClick = {
-                                    viewModel.config.motionDetectionMode = if (viewModel.config.motionDetectionMode == "face") "motion" else "face"
-                                }
-                            )
-                        )
                     }
                     menuOptions.add(
                         MenuOption(

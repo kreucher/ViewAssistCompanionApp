@@ -33,11 +33,21 @@ class MotionDetectionEngine(
     companion object {
         const val MOTION_INTERVAL_TIMEOUT = 5000
         init {
+            suppressMLKitSpam()
+        }
+
+        private fun suppressMLKitSpam() {
             try {
                 // Reinforce log suppression before ML Kit is used in this class
                 android.system.Os.setenv("TFLITE_XNNPACK_DELEGATE_NO_LOGGING", "1", true)
                 android.system.Os.setenv("XNNPACK_LOG_LEVEL", "0", true)
                 android.system.Os.setenv("TFLITE_LOG_LEVEL", "0", true)
+                android.system.Os.setenv("TF_CPP_MIN_LOG_LEVEL", "3", true)
+
+                // Native ML Kit tags often check these environment variables as a fallback for system properties
+                android.system.Os.setenv("log.tag.FaceDetectorV2Jni", "ERROR", true)
+                android.system.Os.setenv("log.tag.ThickFaceDetector", "ERROR", true)
+                android.system.Os.setenv("log.tag.Vision", "ERROR", true)
             } catch (_: Exception) {}
         }
     }
