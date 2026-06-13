@@ -3,6 +3,7 @@ package com.msp1974.vacompanion.ui.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DoNotDisturbOn
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -21,6 +22,8 @@ fun QuickActionsSheet(
     onOpenSettings: () -> Unit,
     isDiagnosticsEnabled: Boolean,
     onToggleDiagnostics: () -> Unit,
+    isDNDEnabled: Boolean,
+    onToggleDND: () -> Unit,
     sheetState: SheetState = rememberModalBottomSheetState(),
 ) {
     ModalBottomSheet(
@@ -38,7 +41,6 @@ fun QuickActionsSheet(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
-            
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
@@ -52,11 +54,11 @@ fun QuickActionsSheet(
                     }
                 )
                 QuickActionButton(
-                    icon = Icons.Default.Settings,
-                    label = "Settings",
+                    icon = Icons.Default.DoNotDisturbOn,
+                    label = "DND",
+                    isSelected = isDNDEnabled,
                     onClick = {
-                        onOpenSettings()
-                        onDismiss()
+                        onToggleDND()
                     }
                 )
                 QuickActionButton(
@@ -65,6 +67,13 @@ fun QuickActionsSheet(
                     isSelected = isDiagnosticsEnabled,
                     onClick = {
                         onToggleDiagnostics()
+                    }
+                )
+                QuickActionButton(
+                    icon = Icons.Default.Settings,
+                    label = "Settings",
+                    onClick = {
+                        onOpenSettings()
                         onDismiss()
                     }
                 )

@@ -158,10 +158,6 @@ class APPConfig @Inject constructor(val context: Context) {
         onValueChangedListener(property, oldValue, newValue)
     }
 
-    var swipeRefresh: Boolean by Delegates.observable(DEFAULT_SWIPE_REFRESH) { property, oldValue, newValue ->
-        onValueChangedListener(property, oldValue, newValue)
-    }
-
     var screenAlwaysOn: Boolean by Delegates.observable(false) { property, oldValue, newValue ->
         onValueChangedListener(property, oldValue, newValue)
     }
@@ -255,6 +251,10 @@ class APPConfig @Inject constructor(val context: Context) {
         onValueChangedListener(property, oldValue, newValue)
     }
 
+    var enableQuickActions: Boolean by Delegates.observable(true) { property, oldValue, newValue ->
+        onValueChangedListener(property, oldValue, newValue)
+    }
+
     var customFiles: JsonElement by Delegates.observable(buildJsonObject {
         putJsonArray("microwakeword") {}
         putJsonArray("openwakeword") {}
@@ -321,7 +321,6 @@ class APPConfig @Inject constructor(val context: Context) {
         settings["mute"]?.jsonPrimitive?.booleanOrNull?.let { isMuted = it }
         settings["screen_brightness"]?.jsonPrimitive?.floatOrNull?.let { screenBrightness = it / 100 }
         settings["screen_auto_brightness"]?.jsonPrimitive?.booleanOrNull?.let { screenAutoBrightness = it }
-        settings["swipe_refresh"]?.jsonPrimitive?.booleanOrNull?.let { swipeRefresh = it }
         settings["screen_always_on"]?.jsonPrimitive?.booleanOrNull?.let { screenAlwaysOn = it }
         settings["do_not_disturb"]?.jsonPrimitive?.booleanOrNull?.let { doNotDisturb = it }
         settings["dark_mode"]?.jsonPrimitive?.booleanOrNull?.let { darkMode = it }
@@ -346,6 +345,7 @@ class APPConfig @Inject constructor(val context: Context) {
         settings["screen_saver"]?.jsonPrimitive?.booleanOrNull?.let { screenSaver = it }
         settings["screen_orientation_mode"]?.jsonPrimitive?.contentOrNull?.let { screenOrientationMode = it }
         settings["continue_conversation"]?.jsonPrimitive?.booleanOrNull?.let { continueConversation = it }
+        settings["quick_actions"]?.jsonPrimitive?.booleanOrNull?.let { enableQuickActions = it }
         settings["custom_files"]?.let { customFiles = it }
 
         firebase.addToCrashLog("Settings update")
@@ -397,7 +397,6 @@ class APPConfig @Inject constructor(val context: Context) {
         const val DEFAULT_MUSIC_VOLUME = 10
         const val DEFAULT_SCREEN_BRIGHTNESS = 0.5f
         const val DEFAULT_SCREEN_AUTO_BRIGHTNESS = true
-        const val DEFAULT_SWIPE_REFRESH = true
         const val DEFAULT_DUCKING_VOLUME = 2
         const val DEFAULT_MUTE = false
         const val DEFAULT_MIC_GAIN = 0

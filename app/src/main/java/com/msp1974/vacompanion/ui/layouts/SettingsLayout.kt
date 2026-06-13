@@ -7,7 +7,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DisabledByDefault
-import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
@@ -113,7 +112,7 @@ fun SettingsLayout(
                             onClick = { currentScreen = SettingsScreen.PERMISSIONS_INFO }
                         )
                     )
-                    if (viewModel.deviceInfo.hardware.hasFrontCamera) {
+                    if (vaUiState.menuOpenedByAction && viewModel.deviceInfo.hardware.hasFrontCamera) {
                         menuOptions.add(
                             MenuOption(
                                 title = "View Camera Stream",

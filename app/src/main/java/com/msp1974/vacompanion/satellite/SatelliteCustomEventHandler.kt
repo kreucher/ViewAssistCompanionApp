@@ -191,7 +191,7 @@ class SatelliteCustomEventHandler(
                 if (data != null) {
                     satellite.sendCustomEvent("gesture",
                         buildJsonObject {
-                            put("gesture", data.direction.toString().lowercase())
+                            put("gesture", data.direction.toString().lowercase()  )
                             put("touch_points", data.pointers)
                             put("x", data.startX)
                             put("y", data.startX)

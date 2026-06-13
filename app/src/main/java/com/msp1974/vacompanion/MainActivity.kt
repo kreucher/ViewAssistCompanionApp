@@ -34,9 +34,15 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.camera.core.ExperimentalMirrorMode
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.app.ActivityCompat
@@ -108,6 +114,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
     private var screenModeJob: Job? = null
     private var lastScreenStateEvent: Long = 0
     private var motionDetected: Boolean = false
+    private val snackbarHostState = SnackbarHostState()
 
 
 
@@ -170,43 +177,49 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         setContent {
             val vaUiState by viewModel.vacaState.collectAsState()
             AppTheme(darkMode = false, dynamicColor = false) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxSize(),
-                    color = Color.Black
-                ) {
-                    when {
-                        vaUiState.screenBlank -> BlackScreen()
-                        vaUiState.satelliteRunning -> {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                WebViewScreen(webView)
-                                if (vaUiState.showMenu) {
-                                    SettingsLayout(
-                                        viewModel = viewModel,
-                                        onClose = {
-                                            viewModel.setShowMenu(false)
-                                        }
-                                    )
+                Scaffold(
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                    containerColor = Color.Black
+                ) { padding ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                        color = Color.Black
+                    ) {
+                        when {
+                            vaUiState.screenBlank -> BlackScreen()
+                            vaUiState.satelliteRunning -> {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    WebViewScreen(webView)
+                                    if (vaUiState.showMenu) {
+                                        SettingsLayout(
+                                            viewModel = viewModel,
+                                            onClose = {
+                                                viewModel.setShowMenu(false)
+                                            }
+                                        )
+                                    }
                                 }
                             }
+                            else -> ConnectionScreen()
                         }
-                        else -> ConnectionScreen()
-                    }
 
-                    when {
-                        vaUiState.alertDialog != null -> {
-                            VADialog(
-                                onDismissRequest = {
-                                    vaUiState.alertDialog!!.onDismiss()
-                                },
-                                onConfirmation = {
-                                    vaUiState.alertDialog!!.onConfirm()
-                                },
-                                dialogTitle = vaUiState.alertDialog!!.title,
-                                dialogText = vaUiState.alertDialog!!.message,
-                                confirmText = vaUiState.alertDialog!!.confirmText,
-                                dismissText = vaUiState.alertDialog!!.dismissText
-                            )
+                        when {
+                            vaUiState.alertDialog != null -> {
+                                VADialog(
+                                    onDismissRequest = {
+                                        vaUiState.alertDialog!!.onDismiss()
+                                    },
+                                    onConfirmation = {
+                                        vaUiState.alertDialog!!.onConfirm()
+                                    },
+                                    dialogTitle = vaUiState.alertDialog!!.title,
+                                    dialogText = vaUiState.alertDialog!!.message,
+                                    confirmText = vaUiState.alertDialog!!.confirmText,
+                                    dismissText = vaUiState.alertDialog!!.dismissText
+                                )
+                            }
                         }
                     }
                 }
@@ -589,11 +602,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                     event.newValue as String,
                     Toast.LENGTH_SHORT
                 ).show()
-                "showToastError" -> Toast.makeText(
-                    this,
-                    "⚠️ ${event.newValue}",
-                    Toast.LENGTH_LONG
-                ).show()
+                "showToastError" -> showSnackbar("${event.newValue}")
                 else -> consumed = false
             }
             if (consumed) {
@@ -652,6 +661,16 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         }
 
         webView.refreshDarkMode()
+    }
+
+    private fun showSnackbar(message: String) {
+        lifecycleScope.launch {
+            snackbarHostState.showSnackbar(
+                message = message,
+                withDismissAction = true,
+                duration = SnackbarDuration.Short
+            )
+        }
     }
 
     private fun updatePermissionStatus() {

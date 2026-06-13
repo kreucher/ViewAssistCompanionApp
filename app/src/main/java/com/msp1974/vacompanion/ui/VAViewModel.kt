@@ -1,6 +1,8 @@
   package com.msp1974.vacompanion.ui
 
 import android.app.Application
+import android.app.NotificationManager
+import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
 import androidx.core.content.ContextCompat.getString
@@ -113,7 +115,6 @@ data class State(
 
     var launchOnBoot: Boolean = true,
     var satelliteRunning: Boolean = false,
-    var swipeRefreshEnabled: Boolean = false,
     var darkMode: Boolean = false,
     var isDND: Boolean = false,
     var screenBlank: Boolean = true,
@@ -171,7 +172,6 @@ class VAViewModel @Inject constructor(
         _vacaState.update { currentState ->
             currentState.copy(
                 launchOnBoot = config.startOnBoot,
-                swipeRefreshEnabled = config.swipeRefresh,
                 motionDetectionSensitivity = config.motionDetectionSensitivity,
                 motionDetectionMode = config.motionDetectionMode,
                 // TODO: Move this into a dedicated configuration observer pattern to handle live updates.
@@ -250,13 +250,6 @@ class VAViewModel @Inject constructor(
                 _vacaState.update { currentState ->
                     currentState.copy(
                         darkMode = event.newValue as Boolean
-                    )
-                }
-            }
-            "swipeRefresh" -> {
-                _vacaState.update { currentState ->
-                    currentState.copy(
-                        swipeRefreshEnabled = event.newValue as Boolean
                     )
                 }
             }
@@ -372,6 +365,17 @@ class VAViewModel @Inject constructor(
 
     fun onShowDiagnostics(show: Boolean) {
         config.diagnosticsEnabled = show
+    }
+
+    fun onToggleDND(enabled: Boolean) {
+        val notificationManager = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (notificationManager.isNotificationPolicyAccessGranted) {
+            val filter = if (enabled) NotificationManager.INTERRUPTION_FILTER_PRIORITY else NotificationManager.INTERRUPTION_FILTER_ALL
+            notificationManager.setInterruptionFilter(filter)
+            config.doNotDisturb = enabled
+        } else {
+            requestNotificationPolicyAccess()
+        }
     }
 
     fun onOpenSettingsAction() {

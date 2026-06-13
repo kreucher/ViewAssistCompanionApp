@@ -17,7 +17,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,7 +26,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.msp1974.vacompanion.settings.PageLoadingStage
 import com.msp1974.vacompanion.ui.VAViewModel
 import com.msp1974.vacompanion.ui.components.DiagnosticBar
@@ -35,8 +33,6 @@ import com.msp1974.vacompanion.ui.components.IconStatusBlock
 import com.msp1974.vacompanion.ui.components.QuickActionsSheet
 import com.msp1974.vacompanion.utils.CustomWebView
 import com.msp1974.vacompanion.utils.WebViewGestureDetector
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,7 +74,7 @@ fun WebViewScreen (webView: CustomWebView, vaViewModel: VAViewModel = viewModel(
         }
 
         Box(modifier = modifier) {
-            WebView(webView, swipeRefreshEnabled = vaViewModel.config.swipeRefresh)
+            WebView(webView)
         }
 
         //TODO: Re-enable when have method for detecting full page render finished
@@ -105,7 +101,7 @@ fun WebViewScreen (webView: CustomWebView, vaViewModel: VAViewModel = viewModel(
             )
         }
 
-        if (  !vaUiState.isNetworkConnected) {
+        if (!vaUiState.isNetworkConnected) {
             IconStatusBlock(
                 message = "Wifi Disconnected",
                 icon = "nowifi",
@@ -113,7 +109,7 @@ fun WebViewScreen (webView: CustomWebView, vaViewModel: VAViewModel = viewModel(
             )
         }
 
-        if (showBottomSheet) {
+        if (showBottomSheet && vaViewModel.config.enableQuickActions) {
             QuickActionsSheet(
                 onDismiss = { showBottomSheet = false },
                 onReload = { webView.refresh() },
@@ -123,6 +119,8 @@ fun WebViewScreen (webView: CustomWebView, vaViewModel: VAViewModel = viewModel(
                 onToggleDiagnostics = { vaViewModel.onShowDiagnostics(
                     if (vaViewModel.config.diagnosticsEnabled) false else true
                 )},
+                isDNDEnabled = vaUiState.isDND,
+                onToggleDND = { vaViewModel.onToggleDND(!vaUiState.isDND) }
             )
         }
     }
@@ -133,35 +131,17 @@ fun WebViewScreen (webView: CustomWebView, vaViewModel: VAViewModel = viewModel(
 fun WebView(
     webView: CustomWebView,
     modifier: Modifier = Modifier,
-    swipeRefreshEnabled: Boolean = true,
 ) {
-    val refreshScope = rememberCoroutineScope()
-    var refreshing by remember { mutableStateOf(false) }
-
     AndroidView(
         modifier = modifier
             .fillMaxSize(),
-        factory = { context ->
-            SwipeRefreshLayout(context).apply {
-                setOnRefreshListener {
-                    refreshScope.launch {
-                        refreshing = true
-                        webView.refresh()
-                        delay(1500)
-                        refreshing = false
-                    }
-                }
-                if (webView.parent != null) {
-                    (webView.parent as ViewGroup).removeView(webView)
-                }
-                addView(webView).apply {
-                    tag = "vaWebView"
-                }
+        factory = {
+            if (webView.parent != null) {
+                (webView.parent as ViewGroup).removeView(webView)
             }
-        },
-        update = { view ->
-            view.isRefreshing = refreshing
-            view.isEnabled = swipeRefreshEnabled
+            webView.apply {
+                tag = "vaWebView"
+            }
         }
     )
 }
