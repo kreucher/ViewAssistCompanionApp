@@ -589,8 +589,6 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                 "textSize" -> webView.setTextSize(event.newValue as Int)
                 "darkMode" -> setDarkMode(event.newValue as Boolean)
                 "refresh" -> webView.refresh()
-                "screenWake" -> applyScreenMode(ScreenOnMode.ON)
-                "screenSleep" -> applyScreenMode(ScreenOnMode.OFF)
                 "screenOn" -> handleScreenOnChange(event.newValue as Boolean)
                 "screenSaver" -> onScreenSaver(event.newValue as Boolean)
                 "screenOrientationMode" -> screen.setScreenOrientation(this@MainActivity, event.newValue as String)

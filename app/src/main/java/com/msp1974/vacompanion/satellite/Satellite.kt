@@ -530,15 +530,11 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
                     BroadcastSender.sendBroadcast(context, BroadcastSender.TOAST_MESSAGE, msg)
                 }
                 "refresh" -> config.eventBroadcaster.notifyEvent(Event("refresh", "", ""))
-                "screen-wake" -> config.eventBroadcaster.notifyEvent(Event("screenWake", "", ""))
-                "screen-sleep" -> config.eventBroadcaster.notifyEvent(Event("screenSleep", "", ""))
                 "wake" -> scope.launch {handleWakeWordDetection()}
                 "alarm" -> if (payloadStr.isNotEmpty()) {
                     val payload = Json.parseToJsonElement(payloadStr).jsonObject
                     handleAlarmAction(payload["activate"]?.jsonPrimitive?.booleanOrNull ?: false)
                 }
-                "open-settings" -> config.eventBroadcaster.notifyEvent(Event("openSettings", "", ""))
-                "update-custom-files" -> Timber.i("Update custom files requested")
             }
         }.onFailure { Timber.e("Failed to handle custom action $action: $it") }
     }
