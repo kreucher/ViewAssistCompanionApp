@@ -556,17 +556,13 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                 when (event.eventName) {
                     "screenAlwaysOn" -> {
                         val enabled = event.newValue as Boolean
-                        //if (enabled) {
-                            //screenWake()
-                        //}
                         screen.setScreenAlwaysOn(window, enabled)
                     }
                     "screenAutoBrightness" -> {
+                        val enabled = event.newValue as Boolean
                         if (screen.isScreenOn() and !viewModel.vacaState.value.screenBlank) {
-                            screen.setScreenAutoBrightness(
-                                window,
-                                event.newValue as Boolean
-                            )
+                            screen.setScreenAutoBrightness(enabled)
+                            if (!enabled) screen.setScreenBrightness(window, config.screenBrightness)
                         }
                     }
                     "screenBrightness" -> {
