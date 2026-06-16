@@ -133,6 +133,9 @@ abstract class WyomingTCPServer(private val context: Context, val config: APPCon
                             }
                             Timber.d("Client disconnected: $clientId.  Total: ${clients.size}")
 
+                            if (clientId == satellite?.clientId) {
+                                satellite?.clientId = ""
+                            }
 
                             if (clients.isEmpty()) {
                                 Timber.d("No clients connected")
