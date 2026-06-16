@@ -15,7 +15,7 @@ class WebViewGestureDetector {
 
     private val SWIPE_THRESHOLD = 150f
     private val L_LEG_THRESHOLD = 100f
-    private val BOTTOM_EDGE_THRESHOLD_PX = 30f
+    private val BOTTOM_EDGE_THRESHOLD_PX = 75f
 
     enum class Direction {
         LEFT, RIGHT, UP, DOWN, BOTTOM_UP, LEFT_UP, LEFT_DOWN, RIGHT_UP, RIGHT_DOWN, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT
