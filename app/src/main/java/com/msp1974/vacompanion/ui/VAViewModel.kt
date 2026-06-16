@@ -102,6 +102,7 @@ data class DiagnosticInfo(
 data class CustomFilesState(
     val microWakeWords: List<String> = emptyList(),
     val openWakeWords: List<String> = emptyList(),
+    val openWakeWordsRT: List<String> = emptyList(),
     val sounds: List<AvailableWakeSound> = emptyList(),
     val alarms: List<AvailableAlarm> = emptyList(),
     val isDownloading: Boolean = false,
@@ -589,6 +590,7 @@ class VAViewModel @Inject constructor(
                     customFiles = CustomFilesState(
                         microWakeWords = customFileDownloader.listCustomWakeWordModels(WakeWordType.MICROWAKEWORD),
                         openWakeWords = customFileDownloader.listCustomWakeWordModels(WakeWordType.OPENWAKEWORD),
+                        openWakeWordsRT = customFileDownloader.listCustomWakeWordModels(WakeWordType.OPENWAKEWORD_RT),
                         // For management UI, we only want to show custom files (not assets)
                         sounds = customFileDownloader.listAvailableCustomWakeSounds(),
                         alarms = customFileDownloader.listAvailableCustomAlarms()

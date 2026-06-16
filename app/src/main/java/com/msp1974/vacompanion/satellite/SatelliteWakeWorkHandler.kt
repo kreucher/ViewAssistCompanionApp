@@ -83,7 +83,7 @@ abstract class SatelliteWakeWorkHandler(val context: Context, val config: APPCon
                 engine = WakeWordEngine(context, config,
                     when (config.wakeWordEngine) {
                         "openwakeword" -> WakeWordEngineModel.OPENWAKEWORD
-                        "openwakeword-rt" -> WakeWordEngineModel.OPENWAKEWORD_RT
+                        "openwakeword_rt" -> WakeWordEngineModel.OPENWAKEWORD_RT
                         else -> WakeWordEngineModel.MICROWAKEWORD
                     },
                     deviceInfo.software.isAndroidThings

@@ -17,6 +17,7 @@ import com.msp1974.vacompanion.ui.DiagnosticInfo
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.Helpers
 import com.msp1974.vacompanion.wakeword.AvailableWakeWords
+import com.msp1974.vacompanion.utils.EventListener
 import com.msp1974.vacompanion.utils.CustomFileDownloader
 import com.msp1974.vacompanion.utils.SoundControl.Companion.isDoNotDisturbEnabled
 import com.msp1974.vacompanion.wakeword.WakeWordEngineProvider
@@ -58,12 +59,10 @@ interface ISatelliteEvent {
 enum class AudioRouteOption { NONE, DETECT, STREAM}
 
 
-abstract class Satellite(var context: Context, val config: APPConfig, val scope: CoroutineScope, clientIdString: String, val deviceInfo: DeviceInfo): ISatelliteEvent {
+abstract class Satellite(var context: Context, val config: APPConfig, val scope: CoroutineScope, clientIdString: String, val deviceInfo: DeviceInfo): ISatelliteEvent, EventListener {
 
     var clientId = clientIdString
     val mediaManager: SatelliteMediaManager = SatelliteMediaManager(context, config)
-
-    private var hasInitSettings: Boolean = false
 
     private var sensorRunner: Sensors? = null
     var motionTask = Camera(context, config)
@@ -93,6 +92,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         // Add config change listeners
         Timber.d("Satellite starting...")
         state = SatelliteState.STARTING
+        config.eventBroadcaster.addListener(this)
 
         val loadedSettings = waitForSettings()
         if (!loadedSettings) {
@@ -149,7 +149,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         try {
             withTimeout(waitTime) {
                 // Wait for settings to be processed
-                while (!hasInitSettings) {
+                while (!config.initSettings) {
                     delay(10)
                 }
                 Timber.d("Initial settings downloaded")
@@ -199,7 +199,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
     }
 
     suspend fun handleSatelliteTakeover(clientId: String) {
-        hasInitSettings = false
+        config.initSettings = false
         val loadedSettings = waitForSettings(5000)
         if (!loadedSettings) {
             // Try 1 more time in case of timing issue
@@ -224,6 +224,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
 
     suspend fun stop() {
         state = SatelliteState.STOPPING
+        config.eventBroadcaster.removeListener(this)
 
         stopAudioPipeline()
 
@@ -583,7 +584,7 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
 
     private fun handleSettings(settings: String) {
         config.processSettings(settings)
-        hasInitSettings = true
+        config.initSettings = true
     }
 
     fun sendCapabilities() {
@@ -716,8 +717,19 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
         }
     }
 
+    override fun onEventTriggered(event: Event) {
+        if (event.eventName == "requestSettings") {
+            scope.launch {
+                if (clientId != "") {
+                    sendSatelliteMessage(clientId, "custom-event", buildJsonObject {
+                        put("event_type", "settings")
+                    })
+                }
+            }
+        }
+    }
+
     companion object {
         fun isoNow(): String = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
     }
-
 }
