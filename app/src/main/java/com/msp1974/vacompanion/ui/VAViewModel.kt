@@ -132,6 +132,7 @@ data class State(
     var webViewPageLoadingStage: PageLoadingStage = PageLoadingStage.NOT_STARTED,
     var showUUIDChangeDialog: Boolean = false,
     var isNetworkConnected: Boolean = true,
+    var showSettings: Boolean = false,
     var customFiles: CustomFilesState = CustomFilesState(),
     var cameraStreamActive: Boolean = false,
     var motionDetectionSensitivity: Int = 0,
@@ -386,6 +387,7 @@ class VAViewModel @Inject constructor(
                 menuOpenedByAction = true
             )
         }
+        config.settingsOpen = true
     }
 
     fun setSatelliteRunning(isRunning: Boolean) {
@@ -564,6 +566,16 @@ class VAViewModel @Inject constructor(
                 menuOpenedByAction = if (!show) false else currentState.menuOpenedByAction
             )
         }
+        config.settingsOpen = show
+    }
+
+    fun setShowSettings(show: Boolean) {
+        _vacaState.update { currentState ->
+            currentState.copy(
+                showSettings = show
+            )
+        }
+        config.settingsOpen = show
     }
 
     fun setCameraStreamActive(active: Boolean) {

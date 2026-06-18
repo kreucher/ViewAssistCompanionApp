@@ -284,6 +284,15 @@ abstract class WyomingTCPServer(private val context: Context, val config: APPCon
     private suspend fun startSatellite(clientId: String) {
         Timber.d("Processing run satellite")
 
+        if (config.settingsOpen) {
+            Timber.d("Settings screen open - delaying satellite start")
+            while (config.settingsOpen) {
+                delay(500)
+                clients[clientId]?.handler?.lastMessage = System.currentTimeMillis()
+            }
+            Timber.d("Settings screen closed - proceeding with satellite start")
+        }
+
         val serverIP = clients[clientId]?.handler?.clientIP ?: ""
 
         if (config.pairedDeviceID.isEmpty()) {
