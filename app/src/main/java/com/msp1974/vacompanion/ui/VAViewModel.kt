@@ -441,6 +441,10 @@ class VAViewModel @Inject constructor(
         config.eventBroadcaster.notifyEvent(Event("gesture", "", gestureEvent))
     }
 
+    fun hideSystemUI() {
+        config.eventBroadcaster.notifyEvent(Event("hideSystemUI", "", ""))
+    }
+
     private fun buildAppInfo() {
        _vacaState.update { currentState ->
             currentState.copy(

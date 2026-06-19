@@ -571,6 +571,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                         }
                     }
                     "screenTimeout" -> screen.setScreenTimeout(config.screenTimeout)
+                    "hideSystemUI" -> screen.hideSystemUI(window)
                     else -> consumed = false
                 }
             }

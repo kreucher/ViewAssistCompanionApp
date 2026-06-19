@@ -104,13 +104,19 @@ class CustomWebView @JvmOverloads constructor(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        gestureDetector.onTouchEvent(event, height)
+        val gestureHandled = gestureDetector.onTouchEvent(event, height)
         if (requestDisallow) {
             requestDisallowInterceptTouchEvent(true)
         }
         when (event.actionMasked) {
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> requestDisallow = false
         }
+
+        // Prevent scrolling if more than 1 finger is used
+        if (event.pointerCount > 1 || gestureHandled) {
+            return true
+        }
+
         return super.onTouchEvent(event)
     }
 
