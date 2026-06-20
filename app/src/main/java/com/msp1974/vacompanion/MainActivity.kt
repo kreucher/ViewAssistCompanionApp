@@ -655,7 +655,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
             uiModeManager.nightMode = if (isDark) UiModeManager.MODE_NIGHT_YES else UiModeManager.MODE_NIGHT_NO
         }
 
-        webView.refreshDarkMode()
+        webView.refreshDarkMode(isDark)
     }
 
     private fun showSnackbar(message: String) {
