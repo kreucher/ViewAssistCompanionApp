@@ -106,6 +106,7 @@ data class CustomFilesState(
     val sounds: List<AvailableWakeSound> = emptyList(),
     val alarms: List<AvailableAlarm> = emptyList(),
     val isDownloading: Boolean = false,
+    val isSyncing: Boolean = false,
     val downloadName: String = "",
     val downloadProgress: Int = 0
 )
@@ -626,10 +627,23 @@ class VAViewModel @Inject constructor(
 
     fun syncCustomFiles() {
         viewModelScope.launch {
-            val handler = SatelliteCustomFilesHandler(app, config, this@VAViewModel)
-            handler.syncAllCustomFiles()
-            refreshCustomFiles()
-            refreshAvailableWakeWords()
+            _vacaState.update { currentState ->
+                currentState.copy(
+                    customFiles = currentState.customFiles.copy(isSyncing = true)
+                )
+            }
+            try {
+                val handler = SatelliteCustomFilesHandler(app, config, this@VAViewModel)
+                handler.syncAllCustomFiles()
+                refreshCustomFiles()
+                refreshAvailableWakeWords()
+            } finally {
+                _vacaState.update { currentState ->
+                    currentState.copy(
+                        customFiles = currentState.customFiles.copy(isSyncing = false)
+                    )
+                }
+            }
         }
     }
 

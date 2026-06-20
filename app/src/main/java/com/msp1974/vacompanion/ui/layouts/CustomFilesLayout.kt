@@ -1,4 +1,4 @@
-  package com.msp1974.vacompanion.ui.layouts
+package com.msp1974.vacompanion.ui.layouts
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.msp1974.vacompanion.data.AvailableAlarm
 import com.msp1974.vacompanion.data.AvailableWakeSound
 import com.msp1974.vacompanion.ui.VAViewModel
@@ -149,7 +150,7 @@ fun CustomFilesLayout(
             
             if (!selectionMode) {
                 IconButton(onClick = { viewModel.syncCustomFiles() }) {
-                    Icon(Icons.Default.Sync, contentDescription = "Sync Custom Files")
+                    Icon(Icons.Default.Sync, contentDescription = "Sync Custom Files", tint = MaterialTheme.colorScheme.onSurface)
                 }
             }
         }
@@ -242,6 +243,25 @@ fun CustomFilesLayout(
                 }
             }
         }
+    }
+
+    if (state.customFiles.isSyncing) {
+        AlertDialog(
+            onDismissRequest = { },
+            confirmButton = { },
+            title = { Text("Synchronising") },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(vertical = 8.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text("Syncing custom files with server...")
+                }
+            },
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+        )
     }
 }
 
