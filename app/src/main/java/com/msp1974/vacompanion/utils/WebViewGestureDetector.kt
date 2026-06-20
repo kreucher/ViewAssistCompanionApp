@@ -16,7 +16,7 @@ class WebViewGestureDetector {
 
     private val SWIPE_THRESHOLD = 150f
     private val L_LEG_THRESHOLD = 100f
-    private val BOTTOM_EDGE_THRESHOLD_PX = 75f
+    private val BOTTOM_EDGE_THRESHOLD_PERCENT = 0.15f
 
     enum class Direction {
         LEFT, RIGHT, UP, DOWN, BOTTOM_UP, LEFT_UP, LEFT_DOWN, RIGHT_UP, RIGHT_DOWN, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT
@@ -122,7 +122,7 @@ class WebViewGestureDetector {
                     val dx = event.x - startX
                     val dy = event.y - startY
                     if (abs(dy) > SWIPE_THRESHOLD && abs(dy) > abs(dx)) {
-                        if (dy < 0 && startY > (viewHeight - BOTTOM_EDGE_THRESHOLD_PX)) {
+                        if (dy < 0 && startY > (viewHeight - (viewHeight * BOTTOM_EDGE_THRESHOLD_PERCENT))) {
                             isSwipeDetected = true
                             Timber.d("2-finger swipe up from bottom detected early")
                             listener?.onSwipe(GestureEvent(Direction.BOTTOM_UP, 2, startX, startY))
@@ -156,7 +156,7 @@ class WebViewGestureDetector {
             val prefix = if (pointers == 1) "Single finger" else "$pointers fingers"
             Timber.d("$prefix swipe $direction")
 
-            if (pointers == 2 && direction == Direction.UP && startY > (viewHeight - BOTTOM_EDGE_THRESHOLD_PX)) {
+            if (pointers == 2 && direction == Direction.UP && startY > (viewHeight - (viewHeight * BOTTOM_EDGE_THRESHOLD_PERCENT))) {
                 direction = Direction.BOTTOM_UP
                 Timber.d("2-finger swipe up from bottom detected")
             }
