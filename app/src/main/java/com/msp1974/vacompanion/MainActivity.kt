@@ -176,7 +176,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
 
         setContent {
             val vaUiState by viewModel.vacaState.collectAsState()
-            AppTheme(darkMode = false, dynamicColor = false) {
+            AppTheme(darkMode = vaUiState.darkMode, dynamicColor = false) {
                 Scaffold(
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                     containerColor = Color.Black
