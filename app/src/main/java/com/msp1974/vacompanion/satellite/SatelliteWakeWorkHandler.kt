@@ -150,11 +150,17 @@ abstract class SatelliteWakeWorkHandler(val context: Context, val config: APPCon
                     if (it.detection.detected) {
                         Timber.d("Stop word detected: score: ${it.detection.score}")
                         if (it.detection.score > 0.5) {
-                            onStopWordDetected(it.detection)
-                            BroadcastSender.sendBroadcast(
-                                context,
-                                BroadcastSender.STOP_WORD_DETECTED
-                            )
+                            val now = System.currentTimeMillis()
+                            val lastDetection = detectionCooldowns[it.detection.wakeWordId]
+
+                            if (lastDetection == null || detectionCooldownMs == 0L || now - lastDetection >= detectionCooldownMs) {
+                                onStopWordDetected(it.detection)
+                                BroadcastSender.sendBroadcast(
+                                    context,
+                                    BroadcastSender.STOP_WORD_DETECTED
+                                )
+                                detectionCooldowns[it.detection.wakeWordId] = now
+                            }
                         }
                     }
                 }
