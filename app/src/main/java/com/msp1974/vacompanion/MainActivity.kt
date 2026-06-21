@@ -42,7 +42,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.app.ActivityCompat
@@ -83,10 +82,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.time.Instant
-import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import kotlin.getValue
+import kotlin.time.Duration.Companion.seconds
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
@@ -112,6 +110,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
     private var screenOffStartUp: Boolean = false
     private var screenOffInProgress: Boolean = false
     private var screenModeJob: Job? = null
+    private var screenDelayJob: Job? = null
     private var lastScreenStateEvent: Long = 0
     private var motionDetected: Boolean = false
     private val snackbarHostState = SnackbarHostState()
@@ -611,9 +610,16 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
 
     fun handleScreenOnChange(screenOn: Boolean) {
         val now = System.currentTimeMillis()
-        if (now - lastScreenStateEvent > 1000) {
+        if (now - lastScreenStateEvent > 5000) {
             if (screen.isScreenOn() != screenOn) {
                 applyScreenMode(if (screenOn) ScreenOnMode.ON else ScreenOnMode.OFF)
+                lastScreenStateEvent = now
+            }
+        } else {
+            if (screenDelayJob != null && screenDelayJob!!.isActive) screenDelayJob!!.cancel()
+            screenDelayJob = lifecycleScope.launch {
+                delay(2.seconds)
+                applyScreenMode(if (config.screenOn) ScreenOnMode.ON else ScreenOnMode.OFF)
                 lastScreenStateEvent = now
             }
         }
