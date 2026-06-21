@@ -182,9 +182,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                     containerColor = Color.Black
                 ) { padding ->
                     Surface(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(padding),
+                        modifier = Modifier.fillMaxSize(),
                         color = Color.Black
                     ) {
                         when {
@@ -197,12 +195,17 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                                             viewModel = viewModel,
                                             onClose = {
                                                 viewModel.setShowMenu(false)
-                                            }
+                                            },
+                                            modifier = Modifier.padding(padding)
                                         )
                                     }
                                 }
                             }
-                            else -> ConnectionScreen()
+                            else -> {
+                                Box(modifier = Modifier.padding(padding)) {
+                                    ConnectionScreen()
+                                }
+                            }
                         }
 
                         when {
