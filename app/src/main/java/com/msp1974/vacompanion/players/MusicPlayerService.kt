@@ -3,7 +3,6 @@ package com.msp1974.vacompanion.players
 import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Intent
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.IBinder
 import androidx.core.net.toUri
@@ -14,15 +13,13 @@ import androidx.media3.common.Player
 import androidx.media3.common.audio.AudioFocusRequestCompat
 import androidx.media3.common.audio.AudioManagerCompat
 import androidx.media3.exoplayer.ExoPlayer
-import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.utils.Event
+import com.msp1974.vacompanion.device.DeviceManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -30,10 +27,12 @@ import javax.inject.Inject
 import kotlin.math.min
 
 @AndroidEntryPoint
-class MusicPlayerService() : Service() {
+class MusicPlayerService : Service() {
 
     @Inject
-    lateinit var config: APPConfig
+    lateinit var deviceManager: DeviceManager
+
+    private val config get() = deviceManager.config
 
     private lateinit var audioManager: AudioManager
     private var mediaPlayer: ExoPlayer? = null
@@ -175,7 +174,7 @@ class MusicPlayerService() : Service() {
                     }
                 }
             }
-            .build();
+            .build()
 
         val result = AudioManagerCompat.requestAudioFocus(audioManager, focusRequest!!)
         hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED

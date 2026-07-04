@@ -12,7 +12,6 @@ import androidx.lifecycle.viewModelScope
 import com.msp1974.vacompanion.R
 import com.msp1974.vacompanion.broadcasts.BroadcastSender
 import com.msp1974.vacompanion.data.NetworkStatus
-import com.msp1974.vacompanion.data.NetworkStatusManager
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.settings.PageLoadingStage
 import com.msp1974.vacompanion.utils.Event
@@ -29,20 +28,16 @@ import com.msp1974.vacompanion.wakeword.AvailableWakeWords
 import com.msp1974.vacompanion.utils.CustomFileDownloader
 import com.msp1974.vacompanion.utils.WakeWordType
 import com.msp1974.vacompanion.utils.Network
+import com.msp1974.vacompanion.device.DeviceManager
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.dropWhile
-import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 import androidx.core.net.toUri
-import com.msp1974.vacompanion.device.DeviceInfo
 import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL_TIMEOUT
 import com.msp1974.vacompanion.utils.WebViewGestureDetector
 
@@ -143,22 +138,18 @@ data class State(
 @HiltViewModel
 class VAViewModel @Inject constructor(
     application: Application,
-    val config: APPConfig,
-    val deviceInfo: DeviceInfo,
-    val networkStatusManager: NetworkStatusManager
+    val deviceManager: DeviceManager,
 ): ViewModelBase(application), EventListener, Closeable {
 
+    val config: APPConfig = deviceManager.config
+    val deviceInfo = deviceManager.deviceInfo
     private val _vacaState = MutableStateFlow(State())
     val vacaState: StateFlow<State> = _vacaState.asStateFlow()
 
     var resources: Resources = application.resources
-    var permissions: Permissions = Permissions(application.applicationContext, config, deviceInfo)
+    var permissions: Permissions = Permissions(application.applicationContext, deviceManager)
     val network = Network(application.applicationContext)
-    val customFileDownloader = CustomFileDownloader(application, config)
-
-    val changedNetworkStatus = networkStatusManager.networkStatus
-        .dropWhile { it.status == NetworkStatus.Available }
-        .shareIn(viewModelScope, SharingStarted.Eagerly, 1)
+    val customFileDownloader = CustomFileDownloader(application, deviceManager)
 
     init {
         _vacaState.value = State()
@@ -168,7 +159,29 @@ class VAViewModel @Inject constructor(
         config.eventBroadcaster.addListener(this)
         initValues()
         buildAppInfo()
-        startNetworkMonitor()
+
+        viewModelScope.launch {
+            deviceManager.status.collect { status ->
+                val oldNetworkState = _vacaState.value.isNetworkConnected
+                _vacaState.update { currentState ->
+                    currentState.copy(
+                        isNetworkConnected = status.network.status == NetworkStatus.Available,
+                        satelliteRunning = status.wyoming.satelliteRunning,
+                        isDND = status.isDND,
+                        darkMode = status.darkMode,
+                        webViewPageLoadingStage = status.webViewPageLoadingStage,
+                        cameraStreamActive = status.cameraStreamActive,
+                        screenBlank = status.screenBlank,
+                        diagnosticInfo = currentState.diagnosticInfo.copy(
+                            muted = status.isMuted
+                        )
+                    )
+                }
+                if (oldNetworkState != _vacaState.value.isNetworkConnected) {
+                    onNetworkStateChange(status.network.status)
+                }
+            }
+        }
     }
 
     fun initValues() {
@@ -193,14 +206,6 @@ class VAViewModel @Inject constructor(
         network.releaseWifiLock()
     }
 
-    fun startNetworkMonitor() {
-        viewModelScope.launch(Dispatchers.Default) {
-            changedNetworkStatus.collect {
-                onNetworkStateChange(it.status)
-            }
-        }
-    }
-
     var launchOnBoot: Boolean
         get() = config.startOnBoot
         set(value) {
@@ -217,10 +222,10 @@ class VAViewModel @Inject constructor(
         when (event.eventName) {
             "isMuted" -> {
                 val isMuted = event.newValue as Boolean
+                deviceManager.updateMuteStatus(isMuted)
                 _vacaState.update { currentState ->
                     currentState.copy(
                         diagnosticInfo = currentState.diagnosticInfo.copy(
-                            muted = isMuted,
                             audioLevel = 0f,
                             detectionLevel = 0f,
                             mode = if (isMuted || config.wakeWord == "none") AudioRouteOption.NONE else AudioRouteOption.DETECT
@@ -250,18 +255,10 @@ class VAViewModel @Inject constructor(
             "pairedDeviceID" -> buildAppInfo()
             "openSettings" -> onOpenSettingsAction()
             "darkMode" -> {
-                _vacaState.update { currentState ->
-                    currentState.copy(
-                        darkMode = event.newValue as Boolean
-                    )
-                }
+                deviceManager.updateDarkModeStatus(event.newValue as Boolean)
             }
             "doNotDisturb" -> {
-                _vacaState.update { currentState ->
-                    currentState.copy(
-                        isDND = event.newValue as Boolean
-                    )
-                }
+                deviceManager.updateDNDStatus(event.newValue as Boolean)
             }
             "diagnosticsEnabled" -> {
                 _vacaState.update { currentState ->
@@ -376,6 +373,7 @@ class VAViewModel @Inject constructor(
             val filter = if (enabled) NotificationManager.INTERRUPTION_FILTER_PRIORITY else NotificationManager.INTERRUPTION_FILTER_ALL
             notificationManager.setInterruptionFilter(filter)
             config.doNotDisturb = enabled
+            deviceManager.updateDNDStatus(enabled)
         } else {
             requestNotificationPolicyAccess()
         }
@@ -391,14 +389,6 @@ class VAViewModel @Inject constructor(
         config.settingsOpen = true
     }
 
-    fun setSatelliteRunning(isRunning: Boolean) {
-        _vacaState.update { currentState ->
-            currentState.copy(
-                satelliteRunning = isRunning
-            )
-        }
-    }
-
     fun setStatusMessage(statusMessage: String) {
         _vacaState.update { currentState ->
             currentState.copy(
@@ -408,29 +398,15 @@ class VAViewModel @Inject constructor(
     }
 
     fun setScreenBlank(screenOn: Boolean) {
-        _vacaState.update { currentState ->
-            currentState.copy(
-                screenBlank = screenOn
-            )
-        }
+        deviceManager.updateScreenBlankStatus(screenOn)
     }
 
     fun setWebViewPageLoadingState(stage: PageLoadingStage) {
         Timber.d("WebView page loading state: $stage")
-        _vacaState.update { currentState ->
-            currentState.copy(
-                webViewPageLoadingStage = stage
-            )
-        }
+        deviceManager.updateWebViewPageLoadingStage(stage)
     }
 
     fun onNetworkStateChange(status: NetworkStatus) {
-        Timber.d("Network status: $status")
-        _vacaState.update { currentState ->
-            currentState.copy(
-                isNetworkConnected = status == NetworkStatus.Available
-            )
-        }
         when (status) {
             NetworkStatus.Unavailable  -> setStatusMessage(application.getString(R.string.status_waiting_for_network))
             NetworkStatus.Available -> setStatusMessage(getString(application.applicationContext, R.string.status_waiting_for_connection))
@@ -450,7 +426,7 @@ class VAViewModel @Inject constructor(
        _vacaState.update { currentState ->
             currentState.copy(
                 appInfo = mapOf(
-                    "Version" to config.version,
+                    "Version" to deviceInfo.software.appVersion,
                     "IP Address" to (if (Helpers.isNetworkAvailable(config.context)) Helpers.getIpv4HostAddress() else ""),
                     "Port" to APPConfig.SERVER_PORT.toString(),
                     "Device ID" to config.uuid,
@@ -584,19 +560,15 @@ class VAViewModel @Inject constructor(
     }
 
     fun setCameraStreamActive(active: Boolean) {
-        _vacaState.update { currentState ->
-            currentState.copy(
-                cameraStreamActive = active
-            )
-        }
         config.cameraStreamActive = active
+        deviceManager.updateCameraStreamActive(active)
         config.eventBroadcaster.notifyEvent(Event("cameraStreamActive", "", active))
     }
 
     fun refreshCustomFiles() {
         viewModelScope.launch {
-            val wakeSounds = AvailableWakeSounds(app, config).get()
-            val alarms = AvailableAlarms(app, config).get()
+            val wakeSounds = AvailableWakeSounds(app, deviceManager).get()
+            val alarms = AvailableAlarms(app, deviceManager).get()
             
             // Update config for server info (includes assets)
             config.availableWakeSounds = wakeSounds
@@ -633,7 +605,7 @@ class VAViewModel @Inject constructor(
                 )
             }
             try {
-                val handler = SatelliteCustomFilesHandler(app, config, this@VAViewModel)
+                val handler = SatelliteCustomFilesHandler(app, deviceManager, this@VAViewModel)
                 handler.syncAllCustomFiles()
                 refreshCustomFiles()
                 refreshAvailableWakeWords()

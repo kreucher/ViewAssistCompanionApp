@@ -96,7 +96,7 @@ fun DiagnosticBar(
                         MotionIndicator(diagnosticInfo)
                     }
                 }
-                Row() {
+                Row {
                     InfoGauge(
                         indicatorValue = diagnosticInfo.audioLevel,
                         maxIndicatorValue = 100,

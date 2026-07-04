@@ -56,15 +56,19 @@ class APPConfig @Inject constructor(val context: Context) {
 
     // Constant values
     val name = NAME
-    val version = getPackageInfo(context, context.packageName)?.versionName.toString()
+    //val version = getPackageInfo(context, context.packageName)?.versionName.toString()
     val serverPort = SERVER_PORT
 
     // Versions
     var integrationVersion: String = "0.0.0"
-    var minRequiredApkVersion: String = version
+    var minRequiredApkVersion: String = getPackageInfo(context, context.packageName)?.versionName.toString()
 
 
     // In memory only settings
+    var accessToken: String = ""
+    var tokenExpiry: Long = 0
+
+
     var initSettings: Boolean = false
     var homeAssistantConnectedIP: String = ""
     var homeAssistantHTTPPort: Int = DEFAULT_HA_HTTP_PORT
@@ -281,17 +285,21 @@ class APPConfig @Inject constructor(val context: Context) {
         get() = this.sharedPrefs.getString("uuid", getUUID()) ?: ""
         set(value) = this.sharedPrefs.edit { putString("uuid", value) }
 
+    /*
     var accessToken: String
         get() = this.sharedPrefs.getString("auth_token", "") ?: ""
         set(value) = this.sharedPrefs.edit { putString("auth_token", value) }
+
+        var tokenExpiry: Long
+        get() = this.sharedPrefs.getLong("token_expiry", 0)
+        set(value) = this.sharedPrefs.edit { putLong("token_expiry", value) }
+    */
 
     var refreshToken: String
         get() = this.sharedPrefs.getString("refresh_token", "") ?: ""
         set(value) = this.sharedPrefs.edit { putString("refresh_token", value) }
 
-    var tokenExpiry: Long
-        get() = this.sharedPrefs.getLong("token_expiry", 0)
-        set(value) = this.sharedPrefs.edit { putLong("token_expiry", value) }
+
 
     private var pairedDeviceId: String
         get() = this.sharedPrefs.getString("paired_device_id", "") ?: ""
@@ -304,7 +312,7 @@ class APPConfig @Inject constructor(val context: Context) {
     fun processSettings(settingString: String) {
         initSettings = true
         val settings = Json.parseToJsonElement(settingString).jsonObject
-        
+
         settings["ha_port"]?.jsonPrimitive?.intOrNull?.let { homeAssistantHTTPPort = it }
         settings["ha_url"]?.jsonPrimitive?.contentOrNull?.let { homeAssistantURL = it }
         settings["ha_dashboard"]?.jsonPrimitive?.contentOrNull?.let { homeAssistantDashboard = it }
