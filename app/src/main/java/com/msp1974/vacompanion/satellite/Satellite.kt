@@ -275,10 +275,6 @@ abstract class Satellite(var context: Context, val config: APPConfig, val scope:
             wakeWordHandler = null
         }
 
-        if (config.wakeWord == "none") {
-            return
-        }
-
         Timber.d("Starting Wake Word Detection")
         sendDiagnostics(0f, 0f)
         withContext(Dispatchers.Default) {
