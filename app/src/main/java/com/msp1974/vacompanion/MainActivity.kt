@@ -21,6 +21,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.StrictMode
 import android.provider.Settings
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -488,6 +489,13 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         LocalBroadcastManager.getInstance(this).unregisterReceiver(satelliteBroadcastReceiver)
         unregisterReceiver(satelliteBroadcastReceiver)
         super.onDestroy()
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        if (config.screenSaver && config.screenSaverDisableOnTouch) {
+            config.screenSaver = false
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     private fun terminateApp() {

@@ -114,6 +114,9 @@ class SatelliteCustomEventHandler(
             "screenSaver" -> {
                 satellite.sendSetting("screen_saver", event.newValue)
             }
+            "screenSaverDisableOnTouch" -> {
+                satellite.sendSetting("screen_saver_disable_on_touch", event.newValue)
+            }
             "currentPath" -> {
                 satellite.sendStatus(
                     buildJsonObject {
