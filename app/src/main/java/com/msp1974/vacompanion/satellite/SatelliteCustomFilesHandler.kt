@@ -2,7 +2,6 @@ package com.msp1974.vacompanion.satellite
 
 import android.content.Context
 import com.msp1974.vacompanion.device.DeviceManager
-import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.ui.VAViewModel
 import com.msp1974.vacompanion.utils.Helpers.Companion.capitalizeWords
 import com.msp1974.vacompanion.utils.DownloadStatus

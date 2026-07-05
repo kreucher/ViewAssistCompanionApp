@@ -3,7 +3,6 @@ package com.msp1974.vacompanion.satellite
 import android.content.Context
 import android.media.AudioManager
 import com.msp1974.vacompanion.device.DeviceManager
-import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.device.VolumeManager
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.EventListener
@@ -17,7 +16,6 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject

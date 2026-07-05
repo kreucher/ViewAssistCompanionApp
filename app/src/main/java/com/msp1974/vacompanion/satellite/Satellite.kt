@@ -18,8 +18,11 @@ import com.msp1974.vacompanion.utils.EventListener
 import com.msp1974.vacompanion.utils.CustomFileDownloader
 import com.msp1974.vacompanion.utils.SoundControl.Companion.isDoNotDisturbEnabled
 import com.msp1974.vacompanion.wakeword.WakeWordEngineProvider
+import com.msp1974.vacompanion.wyoming.EVENT_TYPE
 import com.msp1974.vacompanion.wyoming.SatelliteState
 import com.msp1974.vacompanion.wyoming.WyomingCapabilitiesBuilder
+import com.msp1974.vacompanion.wyoming.WyomingCustomEventType
+import com.msp1974.vacompanion.wyoming.WyomingEvent
 import com.msp1974.vacompanion.wyoming.WyomingInfoBuilder
 import com.msp1974.vacompanion.wyoming.WyomingPacket
 import io.github.z4kn4fein.semver.toVersion
@@ -50,6 +53,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 interface ISatelliteEvent {
@@ -103,8 +107,8 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
         val loadedSettings = waitForSettings()
         if (!loadedSettings) {
             // Try 1 more time in case of timing issue
-            sendSatelliteMessage(clientId,"custom-event", buildJsonObject {
-                put("event_type", "settings")
+            sendSatelliteMessage(clientId, WyomingEvent.CUSTOM_EVENT, buildJsonObject {
+                put(EVENT_TYPE, WyomingCustomEventType.SETTINGS)
             })
             if (!waitForSettings(2000)) {
                 state = SatelliteState.ERROR
@@ -153,10 +157,10 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
 
     suspend fun waitForSettings(waitTime: Long = 10000): Boolean {
         try {
-            withTimeout(waitTime) {
+            withTimeout(waitTime.milliseconds) {
                 // Wait for settings to be processed
                 while (!config.initSettings) {
-                    delay(10)
+                    delay(10.milliseconds)
                 }
                 Timber.d("Initial settings downloaded")
             }
@@ -182,7 +186,7 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
                 config.availableAlarms = AvailableAlarms(context, deviceManager).get()
 
                 val infoBuilder = WyomingInfoBuilder(deviceManager)
-                sendEvent("info", infoBuilder.buildInfo())
+                sendEvent(WyomingEvent.INFO, infoBuilder.buildInfo())
 
                 sendCapabilities()
             }
@@ -209,8 +213,8 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
         val loadedSettings = waitForSettings(5000)
         if (!loadedSettings) {
             // Try 1 more time in case of timing issue
-            sendSatelliteMessage(clientId,"custom-event", buildJsonObject {
-                put("event_type", "settings")
+            sendSatelliteMessage(clientId, WyomingEvent.CUSTOM_EVENT, buildJsonObject {
+                put(EVENT_TYPE, WyomingCustomEventType.SETTINGS)
             })
             if (!waitForSettings(2000)) {
                 state = SatelliteState.ERROR
@@ -261,7 +265,7 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
 
     suspend fun processMessage(packet: WyomingPacket) {
         when (packet.type) {
-            "custom-event" -> customEventHandler(clientId, packet)
+            WyomingEvent.CUSTOM_EVENT -> customEventHandler(clientId, packet)
             else -> {
                 if (audioPipeline != null && audioPipeline?.pipelineStage != PipelineStage.ENDED) {
                     audioPipeline?.processAudioPipelineMessage(packet)
@@ -389,7 +393,7 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
                 Timber.i("Started wake word sound")
                 scope.launch {
                     while(mediaManager.soundPlayer.state.value != Player.STATE_ENDED) {
-                        delay(50)
+                        delay(50.milliseconds)
                     }
                     audioPipeline?.silenceAudioBefore = System.currentTimeMillis()
                     Timber.i("Ended wake word sound")
@@ -479,7 +483,7 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
                     if (continueConversation) {
                         scope.launch {
                             while (mediaManager.voicePlayer.isRunning()) {
-                                delay(10)
+                                delay(10.milliseconds)
                             }
                             startAudioPipeline(PipelineStartMode.CONTINUE_CONVERSATION)
                         }
@@ -515,9 +519,9 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
         val eventType = packet.getProp("event_type")
 
         when (eventType) {
-            "action" -> handleAction(packet.getProp("action"), packet)
-            "settings" -> handleSettings(packet.getProp("settings"))
-            "capabilities" -> handleCapabilities(clientId)
+            WyomingCustomEventType.ACTION -> handleAction(packet.getProp("action"), packet)
+            WyomingCustomEventType.SETTINGS -> handleSettings(packet.getProp("settings"))
+            WyomingCustomEventType.CAPABILITIES -> handleCapabilities(clientId)
         }
     }
 
@@ -602,11 +606,11 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
     // Send messages
     // *************************************************************************
     fun sendStatus(data: JsonObject) {
-        sendCustomEvent("status", data)
+        sendCustomEvent(WyomingCustomEventType.STATUS, data)
     }
 
     fun sendSetting(name: String, value: Any) {
-        sendCustomEvent("settings", buildJsonObject {
+        sendCustomEvent(WyomingCustomEventType.SETTINGS, buildJsonObject {
             put("timestamp", isoNow())
             putJsonObject("settings") {
                 when (value) {
@@ -624,8 +628,8 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
     }
 
     fun sendCustomEvent(type: String, data: JsonObject) {
-        sendSatelliteMessage(clientId, "custom-event", buildJsonObject {
-            put("event_type", type)
+        sendSatelliteMessage(clientId, WyomingEvent.CUSTOM_EVENT, buildJsonObject {
+            put(EVENT_TYPE, type)
             put("data", data)
         })
     }
@@ -725,8 +729,8 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
         if (event.eventName == "requestSettings") {
             scope.launch {
                 if (clientId != "") {
-                    sendSatelliteMessage(clientId, "custom-event", buildJsonObject {
-                        put("event_type", "settings")
+                    sendSatelliteMessage(clientId, WyomingEvent.CUSTOM_EVENT, buildJsonObject {
+                        put(EVENT_TYPE, WyomingCustomEventType.SETTINGS)
                     })
                 }
             }

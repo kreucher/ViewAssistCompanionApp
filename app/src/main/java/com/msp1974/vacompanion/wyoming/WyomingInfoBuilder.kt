@@ -1,8 +1,6 @@
 package com.msp1974.vacompanion.wyoming
 
 import com.msp1974.vacompanion.device.DeviceManager
-import com.msp1974.vacompanion.device.info.DeviceInfo
-import com.msp1974.vacompanion.settings.APPConfig
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
