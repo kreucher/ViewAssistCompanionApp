@@ -1,6 +1,5 @@
 package com.msp1974.vacompanion.utils
 
-import android.app.Activity
 import android.app.DownloadManager
 import android.content.Context
 import android.database.Cursor
@@ -29,7 +28,7 @@ data class LatestRelease(
     var downloadURL: String = ""
 )
 
-class Updater(val activity: Activity) {
+class Updater(val context: Context) {
     private val log = Logger()
     private val client = HttpClientProvider().get()
     var latestRelease: LatestRelease = LatestRelease("0.0.0", "")
@@ -84,8 +83,8 @@ class Updater(val activity: Activity) {
                 release = getLatestRelease()
             }
             if (release.version != "0.0.0") {
-                val installed = activity.packageManager.getPackageInfo(
-                    activity.packageName,
+                val installed = context.packageManager.getPackageInfo(
+                    context.packageName,
                     0
                 ).versionName.toString()
                 return release.version.toVersion() > installed.toVersion()
@@ -103,15 +102,15 @@ class Updater(val activity: Activity) {
                 val request =
                     DownloadManager.Request(latestRelease.downloadURL.toUri())
                 val downloadManager =
-                    activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                    context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                 request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
 
-                val file = File(activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "vaca.apk")
+                val file = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "vaca.apk")
                 if (file.exists()) {
                     log.d("File exists: $file")
                     file.delete()
                 }
-                request.setDestinationInExternalFilesDir(activity, Environment.DIRECTORY_DOWNLOADS, "vaca.apk")
+                request.setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "vaca.apk")
 
                 val downloadId = downloadManager.enqueue(request)
                 waitForDownloadToComplete(downloadId, callback)
@@ -122,7 +121,7 @@ class Updater(val activity: Activity) {
     }
 
     private fun waitForDownloadToComplete(id: Long, callback: (uri: String) -> Unit) {
-        val downloadManager = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val cursor: Cursor = downloadManager.query(DownloadManager.Query().setFilterById(id))
         if (cursor.moveToNext()) {
             val colIdx = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
@@ -170,8 +169,8 @@ class Updater(val activity: Activity) {
     }
 
     private fun getContentURIFromFile(file: String): Uri {
-        val f = activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-        val uri = FileProvider.getUriForFile(activity.applicationContext, activity.packageName + ".provider", File(f, "vaca.apk"))
+        val f = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+        val uri = FileProvider.getUriForFile(context.applicationContext, context.packageName + ".provider", File(f, "vaca.apk"))
         return uri
     }
 }

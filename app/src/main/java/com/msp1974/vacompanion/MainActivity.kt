@@ -396,6 +396,10 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                     applyScreenMode(ScreenOnMode.ON)
                     runUpdateRoutine()
                 }
+                BroadcastSender.RUN_UPDATE -> {
+                    applyScreenMode(ScreenOnMode.ON)
+                    downloadAndInstallUpdate()
+                }
                 BroadcastSender.REQUEST_MISSING_PERMISSIONS -> {
                     val specificPermission = intent.getStringExtra("extra")
                     if (specificPermission != null) {

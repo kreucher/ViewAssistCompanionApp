@@ -28,6 +28,7 @@ import com.msp1974.vacompanion.wakeword.AvailableWakeWords
 import com.msp1974.vacompanion.utils.CustomFileDownloader
 import com.msp1974.vacompanion.utils.WakeWordType
 import com.msp1974.vacompanion.utils.Network
+import com.msp1974.vacompanion.utils.Updater
 import com.msp1974.vacompanion.device.DeviceManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -150,6 +151,7 @@ class VAViewModel @Inject constructor(
     var permissions: Permissions = Permissions(application.applicationContext, deviceManager)
     val network = Network(application.applicationContext)
     val customFileDownloader = CustomFileDownloader(application, deviceManager)
+    val updater = Updater(application.applicationContext)
 
     init {
         _vacaState.value = State()
@@ -163,10 +165,13 @@ class VAViewModel @Inject constructor(
         viewModelScope.launch {
             deviceManager.status.collect { status ->
                 val oldNetworkState = _vacaState.value.isNetworkConnected
+                val wasRunning = _vacaState.value.satelliteRunning
+                val isRunning = status.wyoming.satelliteRunning
+
                 _vacaState.update { currentState ->
                     currentState.copy(
                         isNetworkConnected = status.network.status == NetworkStatus.Available,
-                        satelliteRunning = status.wyoming.satelliteRunning,
+                        satelliteRunning = isRunning,
                         isDND = status.isDND,
                         darkMode = status.darkMode,
                         webViewPageLoadingStage = status.webViewPageLoadingStage,
@@ -174,9 +179,17 @@ class VAViewModel @Inject constructor(
                         screenBlank = status.screenBlank,
                         diagnosticInfo = currentState.diagnosticInfo.copy(
                             muted = status.isMuted
-                        )
+                        ),
+                        showMenu = if (wasRunning && !isRunning) false else currentState.showMenu,
+                        menuOpenedByAction = if (wasRunning && !isRunning) false else currentState.menuOpenedByAction,
+                        showSettings = if (wasRunning && !isRunning) false else currentState.showSettings
                     )
                 }
+
+                if (wasRunning && !isRunning) {
+                    config.settingsOpen = false
+                }
+
                 if (oldNetworkState != _vacaState.value.isNetworkConnected) {
                     onNetworkStateChange(status.network.status)
                 }
@@ -437,7 +450,50 @@ class VAViewModel @Inject constructor(
     }
 
     fun checkForUpdate() {
-        BroadcastSender.sendBroadcast(config.context, BroadcastSender.VERSION_MISMATCH)
+        viewModelScope.launch {
+            try {
+                val latest = updater.getLatestRelease(forceUpdate = true)
+                val current = deviceInfo.software.appVersion
+
+                if (updater.isUpdateAvailable()) {
+                    showUpdateDialog(
+                        VADialog(
+                            title = "Update Available",
+                            message = "A new version of View Assist Companion is available (v${latest.version}). Would you like to update from v$current?",
+                            confirmText = "Update",
+                            dismissText = "Cancel",
+                            confirmCallback = {
+                                BroadcastSender.sendBroadcast(config.context, BroadcastSender.RUN_UPDATE)
+                            },
+                            dismissCallback = {}
+                        )
+                    )
+                } else {
+                    showUpdateDialog(
+                        VADialog(
+                            title = "Up to Date",
+                            message = "You are already using the latest version of View Assist Companion (v$current).",
+                            confirmText = "OK",
+                            dismissText = "",
+                            confirmCallback = {},
+                            dismissCallback = {}
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                Timber.e("Error checking for update: ${e.message}")
+                showUpdateDialog(
+                    VADialog(
+                        title = "Update Check Failed",
+                        message = "An error occurred while checking for updates: ${e.message}",
+                        confirmText = "OK",
+                        dismissText = "",
+                        confirmCallback = {},
+                        dismissCallback = {}
+                    )
+                )
+            }
+        }
     }
 
     fun requestPermissions() {

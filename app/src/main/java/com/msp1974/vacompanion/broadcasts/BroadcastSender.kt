@@ -17,6 +17,7 @@ class BroadcastSender {
         internal const val TOAST_MESSAGE = "TOAST_MESSAGE"
         internal const val WEBVIEW_CRASH = "WEBVIEW_CRASH"
         internal const val VERSION_MISMATCH = "VERSION_MISMATCH"
+        internal const val RUN_UPDATE = "RUN_UPDATE"
         internal const val REQUEST_MISSING_PERMISSIONS = "REQUEST_MISSING_PERMISSIONS"
         internal const val CLOSE_APP = "CLOSE_APP"
 
