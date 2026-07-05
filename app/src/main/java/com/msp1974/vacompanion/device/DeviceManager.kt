@@ -57,7 +57,7 @@ class DeviceManager @Inject constructor(
     val authenticationManager: AuthenticationManager = AuthenticationManager(config)
 
     // Network status handling
-    private val _networkStatus = MutableStateFlow(networkStatusManager.networkInfo)
+    private val _networkStatus = MutableStateFlow(NetworkInfo())
     val networkStatus: StateFlow<NetworkInfo> = _networkStatus.asStateFlow()
 
     // Server (Wyoming) connection status handling
@@ -80,7 +80,7 @@ class DeviceManager @Inject constructor(
 
     private fun runListeners() {
         deviceManagerScope.launch {
-            networkStatusManager.getNetworkStatus().collect { info ->
+            networkStatusManager.networkInfo.collect { info ->
                 _networkStatus.value = info
                 _status.update { it.copy(network = info) }
             }

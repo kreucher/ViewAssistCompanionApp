@@ -5,10 +5,10 @@ import android.content.Context.CONNECTIVITY_SERVICE
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import androidx.annotation.RequiresPermission
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -17,60 +17,66 @@ enum class NetworkStatus {
     Unavailable
 }
 
-class NetworkInfo {
-    var status: NetworkStatus = NetworkStatus.Unavailable
-        set(value) {
-            field = value
-            lastChanged = System.currentTimeMillis()
-            if (value == NetworkStatus.Unavailable) {
-                disconnectCount++
-                type = "None"
-            }
-        }
-    var type: String = "None"
-    var lastChanged: Long = 0
-    var disconnectCount: Long = 0
-}
+data class NetworkInfo(
+    val status: NetworkStatus = NetworkStatus.Unavailable,
+    val type: String = "None",
+    val lastChanged: Long = 0,
+    val disconnectCount: Long = 0
+)
 
 class NetworkStatusManager @Inject constructor(val context: Context) {
 
-    val networkInfo = NetworkInfo()
+    private val _networkInfo = MutableStateFlow(NetworkInfo())
+    val networkInfo: StateFlow<NetworkInfo> = _networkInfo.asStateFlow()
 
-    @RequiresPermission("android.permission.ACCESS_NETWORK_STATE")
-    fun getNetworkStatus(): Flow<NetworkInfo> = callbackFlow {
-        val connectivityManager = context.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onUnavailable() {
-                Timber.w("Network unavailable")
-                networkInfo.status = NetworkStatus.Unavailable
-                networkInfo.type = "None"
-                trySend(networkInfo)
-            }
-
-            override fun onAvailable(network: Network) {
-                Timber.d("Network available")
-                networkInfo.status = NetworkStatus.Available
-                networkInfo.type = getNetworkType(connectivityManager, network)
-                trySend(networkInfo)
-            }
-
-            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-                networkInfo.type = getNetworkType(connectivityManager, network)
-                trySend(networkInfo)
-            }
-
-            override fun onLost(network: Network) {
-                Timber.w("Network lost  ")
-                networkInfo.status = NetworkStatus.Unavailable
-                networkInfo.type = "None"
-                trySend(networkInfo)
+    val connectivityManager = context.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+    val callback = object : ConnectivityManager.NetworkCallback() {
+        override fun onUnavailable() {
+            Timber.w("Network unavailable")
+            _networkInfo.update { info ->
+                info.copy(
+                    status = NetworkStatus.Unavailable,
+                    type = "None",
+                    lastChanged = System.currentTimeMillis()
+                )
             }
         }
 
-        connectivityManager.registerDefaultNetworkCallback(callback)
+        override fun onAvailable(network: Network) {
+            Timber.d("Network available")
+            _networkInfo.update { info ->
+                info.copy(
+                    status = NetworkStatus.Available,
+                    type = getNetworkType(connectivityManager, network),
+                    lastChanged = System.currentTimeMillis()
+                )
+            }
+        }
 
-        awaitClose { connectivityManager.unregisterNetworkCallback(callback) }
+        override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+            _networkInfo.update { info ->
+                info.copy(
+                    type = getNetworkType(connectivityManager, network),
+                    lastChanged = System.currentTimeMillis()
+                )
+            }
+        }
+
+        override fun onLost(network: Network) {
+            Timber.w("Network lost  ")
+            _networkInfo.update { info ->
+                info.copy(
+                    status = NetworkStatus.Unavailable,
+                    type = "None",
+                    lastChanged = System.currentTimeMillis(),
+                    disconnectCount = info.disconnectCount + 1
+                )
+            }
+        }
+    }
+
+    init {
+        connectivityManager.registerDefaultNetworkCallback(callback)
     }
 
     private fun getNetworkType(connectivityManager: ConnectivityManager, network: Network): String {

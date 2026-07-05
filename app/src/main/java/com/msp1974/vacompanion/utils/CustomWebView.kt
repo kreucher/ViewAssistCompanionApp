@@ -144,7 +144,7 @@ class CustomWebView @JvmOverloads constructor(
 
     val externalAuthCallback = object : ExternalAuthCallback {
         override fun onRequestExternalAuth(view: WebView, payload: String) {
-            if (deviceManager.networkStatusManager.networkInfo.status == NetworkStatus.Available) {
+            if (deviceManager.networkStatusManager.networkInfo.value.status == NetworkStatus.Available) {
                 val json = Json { ignoreUnknownKeys = true }
                 val payloadJson = json.parseToJsonElement(payload).jsonObject
                 val forceRefresh = payloadJson["force"]?.jsonPrimitive?.boolean ?: false
@@ -157,7 +157,7 @@ class CustomWebView @JvmOverloads constructor(
             }
         }
         override fun onRequestRevokeExternalAuth(view: WebView) {
-            if (deviceManager.networkStatusManager.networkInfo.status == NetworkStatus.Available) {
+            if (deviceManager.networkStatusManager.networkInfo.value.status == NetworkStatus.Available) {
                 scope.launch {
                     deviceManager.authenticationManager.revokeSession()
                 }
