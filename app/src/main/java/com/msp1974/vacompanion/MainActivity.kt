@@ -222,11 +222,6 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         log.d("Checking permissions")
         updatePermissionStatus()
         if (!viewModel.vacaState.value.permissions.hasCorePermissions || !viewModel.vacaState.value.permissions.hasOptionalPermissions) {
-            // Need to get permissions
-            LocalBroadcastManager.getInstance(this).registerReceiver(satelliteBroadcastReceiver, IntentFilter().apply {
-                addAction(BroadcastSender.REQUEST_MISSING_PERMISSIONS)
-            })
-
             // Turn on screen for startup to show permission request
             screenOffStartUp = false
 
@@ -349,6 +344,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
             addAction(BroadcastSender.WEBVIEW_CRASH)
             addAction(BroadcastSender.TOAST_MESSAGE)
             addAction(BroadcastSender.CLOSE_APP)
+            addAction(BroadcastSender.OPEN_PERMISSION_SCREEN)
         }
         LocalBroadcastManager.getInstance(this)
             .registerReceiver(satelliteBroadcastReceiver, filter)
@@ -400,10 +396,10 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                     applyScreenMode(ScreenOnMode.ON)
                     downloadAndInstallUpdate()
                 }
-                BroadcastSender.REQUEST_MISSING_PERMISSIONS -> {
+                BroadcastSender.OPEN_PERMISSION_SCREEN -> {
                     val specificPermission = intent.getStringExtra("extra")
                     if (specificPermission != null) {
-                        requestSpecificPermission(specificPermission)
+                        openPermissionScreen(specificPermission)
                     } else {
                         checkAndRequestPermissions()
                     }
@@ -487,12 +483,16 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
 
     override fun onDestroy() {
         log.d("Main Activity destroyed")
-
-        screen.setScreenTimeout(config.screenTimeout)
-        config.eventBroadcaster.removeListener(this)
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(satelliteBroadcastReceiver)
-        unregisterReceiver(satelliteBroadcastReceiver)
-        super.onDestroy()
+        try {
+            screen.setScreenTimeout(config.screenTimeout)
+            config.eventBroadcaster.removeListener(this)
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(satelliteBroadcastReceiver)
+            unregisterReceiver(satelliteBroadcastReceiver)
+        } catch (e: Exception) {
+            Timber.e("Error destroying MainActivity: ${e.message}")
+        } finally {
+            super.onDestroy()
+        }
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
@@ -683,16 +683,28 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         viewModel.setPermissionsStatus(corePermissions, optionalPermissions)
     }
 
-    private fun requestSpecificPermission(permission: String) {
-        val requestID = when (permission) {
-            Manifest.permission.RECORD_AUDIO -> RECORD_AUDIO_PERMISSIONS_REQUEST
-            Manifest.permission.CAMERA -> CAMERA_PERMISSIONS_REQUEST
-            Manifest.permission.POST_NOTIFICATIONS -> NOTIFICATION_PERMISSIONS_REQUEST
-            Manifest.permission.WRITE_EXTERNAL_STORAGE -> WRITE_EXTERNAL_STORAGE_PERMISSIONS_REQUEST
-            else -> 0
-        }
-        if (requestID != 0) {
-            ActivityCompat.requestPermissions(this, arrayOf(permission), requestID)
+    private fun openPermissionScreen(permission: String) {
+        Timber.d("Opening permission screen: $permission")
+        when (permission) {
+            Manifest.permission.RECORD_AUDIO -> ActivityCompat.requestPermissions(this, arrayOf(permission), RECORD_AUDIO_PERMISSIONS_REQUEST)
+            Manifest.permission.CAMERA -> ActivityCompat.requestPermissions(this, arrayOf(permission), CAMERA_PERMISSIONS_REQUEST)
+            Manifest.permission.POST_NOTIFICATIONS -> ActivityCompat.requestPermissions(this, arrayOf(permission), NOTIFICATION_PERMISSIONS_REQUEST)
+            Manifest.permission.WRITE_EXTERNAL_STORAGE -> ActivityCompat.requestPermissions(this, arrayOf(permission), WRITE_EXTERNAL_STORAGE_PERMISSIONS_REQUEST)
+            Manifest.permission.BLUETOOTH_CONNECT -> ActivityCompat.requestPermissions(this, arrayOf(permission), BLUETOOTH_PERMISSIONS_REQUEST)
+            "WRITE_SETTINGS" -> {
+                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, "package:$packageName".toUri())
+                onWriteSettingsPermissionActivityResult.launch(intent)
+            }
+            "NOTIFICATION_POLICY" -> {
+                val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                onNotificationAccessPolicyPermissionActivityResult.launch(intent)
+            }
+            "DEVICE_ADMIN" -> {
+                val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(this, VACADeviceAdminReceiver::class.java))
+                intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "This application requires Device Admin rights to be able to control the screen.")
+                onDeviceAdminPermissionActivityResult.launch(intent)
+            }
         }
     }
 
@@ -799,6 +811,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         private const val CAMERA_PERMISSIONS_REQUEST = 250
         private const val NOTIFICATION_PERMISSIONS_REQUEST = 300
         private const val WRITE_EXTERNAL_STORAGE_PERMISSIONS_REQUEST = 400
+        private const val BLUETOOTH_PERMISSIONS_REQUEST = 500
     }
 
     private val onWriteSettingsPermissionActivityResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -816,7 +829,6 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                 setPositiveButton("Got it") { _: DialogInterface?, _: Int ->
                     try {
                         val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         onWriteSettingsPermissionActivityResult.launch(intent)
                     } catch (e: Exception) {
                         log.i("Device does not require explicit permission")
@@ -932,7 +944,6 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                 } else {
                     val intent = Intent(Intent.ACTION_VIEW)
                     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     intent.setDataAndType(
                         uri.toUri(),
                         "application/vnd.android.package-archive"
