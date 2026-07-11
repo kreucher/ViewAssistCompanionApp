@@ -8,6 +8,8 @@ import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,6 +28,7 @@ fun DeviceInfoLayout(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val vaUiState by viewModel.vacaState.collectAsState()
     val deviceInfo = remember { viewModel.deviceInfo }
     
     // Summary of Audio Capabilities
@@ -156,6 +159,22 @@ fun DeviceInfoLayout(
                     icon = Icons.Default.GraphicEq,
                     label = "Audio Enhancements",
                     value = audioSummary.ifEmpty { "None supported" }
+                )
+            }
+
+            item {
+                InfoListItem(
+                    icon = Icons.Default.Mic,
+                    label = "Active Microphone",
+                    value = vaUiState.sensorState.micInput?.activeInput ?: "Unknown"
+                )
+            }
+
+            item {
+                InfoListItem(
+                    icon = Icons.Default.SettingsVoice,
+                    label = "Available Microphones",
+                    value = vaUiState.sensorState.micInput?.availableInputs?.joinToString(", ") ?: "None"
                 )
             }
 

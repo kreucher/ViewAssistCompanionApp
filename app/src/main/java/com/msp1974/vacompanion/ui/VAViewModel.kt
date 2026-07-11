@@ -11,7 +11,7 @@ import androidx.lifecycle.application
 import androidx.lifecycle.viewModelScope
 import com.msp1974.vacompanion.R
 import com.msp1974.vacompanion.broadcasts.BroadcastSender
-import com.msp1974.vacompanion.data.NetworkStatus
+import com.msp1974.vacompanion.device.sensors.NetworkStatus
 import com.msp1974.vacompanion.settings.APPConfig
 import com.msp1974.vacompanion.settings.PageLoadingStage
 import com.msp1974.vacompanion.utils.Event
@@ -40,6 +40,7 @@ import timber.log.Timber
 import javax.inject.Inject
 import androidx.core.net.toUri
 import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL_TIMEOUT
+import com.msp1974.vacompanion.device.sensors.SensorState
 import com.msp1974.vacompanion.utils.WebViewGestureDetector
 
   class VADialog(
@@ -90,7 +91,10 @@ data class DiagnosticInfo(
     var hasCamera: Boolean = false,
     var lastMotionTimestamp: Long = 0,
     var motionInterval: Int = 10000,
-    var motionDetectionMode: String = "motion"
+    var motionDetectionMode: String = "motion",
+    var activeMic: String = "",
+    var lastTranscript: String = "",
+    var lastResponse: String = ""
 )
 
 
@@ -133,7 +137,8 @@ data class State(
     var customFiles: CustomFilesState = CustomFilesState(),
     var cameraStreamActive: Boolean = false,
     var motionDetectionSensitivity: Int = 0,
-    var motionDetectionMode: String = "motion"
+    var motionDetectionMode: String = "motion",
+    var sensorState: SensorState = SensorState()
     )
 
 @HiltViewModel
@@ -182,7 +187,8 @@ class VAViewModel @Inject constructor(
                         ),
                         showMenu = if (wasRunning && !isRunning) false else currentState.showMenu,
                         menuOpenedByAction = if (wasRunning && !isRunning) false else currentState.menuOpenedByAction,
-                        showSettings = if (wasRunning && !isRunning) false else currentState.showSettings
+                        showSettings = if (wasRunning && !isRunning) false else currentState.showSettings,
+                        sensorState = status.sensors
                     )
                 }
 
@@ -497,7 +503,7 @@ class VAViewModel @Inject constructor(
     }
 
     fun requestPermissions() {
-        BroadcastSender.sendBroadcast(config.context, BroadcastSender.REQUEST_MISSING_PERMISSIONS)
+        BroadcastSender.sendBroadcast(config.context, BroadcastSender.OPEN_PERMISSION_SCREEN)
     }
 
     fun refreshPermissionsStatus() {
@@ -527,7 +533,7 @@ class VAViewModel @Inject constructor(
             openAppSettings()
         } else {
             // For runtime permissions, we trigger the system request
-            BroadcastSender.sendBroadcast(config.context, BroadcastSender.REQUEST_MISSING_PERMISSIONS, permission)
+            BroadcastSender.sendBroadcast(config.context, BroadcastSender.OPEN_PERMISSION_SCREEN, permission)
         }
     }
 
@@ -542,37 +548,15 @@ class VAViewModel @Inject constructor(
     }
 
     fun requestWriteSettingsPermission() {
-        val intent = android.content.Intent(
-            android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS,
-            "package:${config.context.packageName}".toUri()
-        ).apply {
-            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        config.context.startActivity(intent)
+        BroadcastSender.sendBroadcast(config.context, BroadcastSender.OPEN_PERMISSION_SCREEN, "WRITE_SETTINGS")
     }
 
     fun requestNotificationPolicyAccess() {
-        val intent = android.content.Intent(
-            android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS
-        ).apply {
-            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        config.context.startActivity(intent)
+        BroadcastSender.sendBroadcast(config.context, BroadcastSender.OPEN_PERMISSION_SCREEN, "NOTIFICATION_POLICY")
     }
 
     fun requestDeviceAdmin() {
-        val intent = android.content.Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-            putExtra(
-                android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN,
-                android.content.ComponentName(config.context, com.msp1974.vacompanion.VACADeviceAdminReceiver::class.java)
-            )
-            putExtra(
-                android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Device admin is required to allow the app to lock/blank the screen."
-            )
-            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        config.context.startActivity(intent)
+        BroadcastSender.sendBroadcast(config.context, BroadcastSender.OPEN_PERMISSION_SCREEN, "DEVICE_ADMIN")
     }
 
     fun setPermissionsStatus(core: Boolean, optional: Boolean) {

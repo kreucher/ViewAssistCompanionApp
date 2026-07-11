@@ -30,7 +30,7 @@ object VACAAudioFormat {
     /** Samples per 10 ms frame (used by WebRTC APM). */
     const val FRAME_SIZE_10MS = SAMPLE_RATE_HZ / 100  // 160
 
-    const val DEFAULT_AUDIO_SOURCE = MediaRecorder.AudioSource.VOICE_RECOGNITION
+    const val DEFAULT_AUDIO_SOURCE = MediaRecorder.AudioSource.VOICE_COMMUNICATION
     const val FALLBACK_AUDIO_SOURCE = MediaRecorder.AudioSource.MIC
 
     const val DEFAULT_BUFFER_SIZE_IN_SHORTS = 1280

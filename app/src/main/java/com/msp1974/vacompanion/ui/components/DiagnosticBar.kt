@@ -2,11 +2,15 @@ package com.msp1974.vacompanion.ui.components
 
 import android.annotation.SuppressLint
 import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,13 +19,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.msp1974.vacompanion.ui.DiagnosticInfo
 import com.msp1974.vacompanion.ui.theme.CustomColours
 import com.msp1974.vacompanion.satellite.AudioRouteOption
-import kotlinx.coroutines.delay
 import java.lang.System
 
 
@@ -33,10 +37,10 @@ fun DiagnosticBar(
 ) {
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+    var expanded by remember { mutableStateOf(false) }
+    val labelColour = Color.White
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+    Column(
         modifier = modifier
             .zIndex(2f)
             .fillMaxWidth()
@@ -47,7 +51,9 @@ fun DiagnosticBar(
     ) {
         if (isPortrait) {
             Column(
-                modifier = Modifier.padding(8.dp).fillMaxWidth(),
+                modifier = Modifier
+                    .padding(8.dp)
+                    .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -56,25 +62,31 @@ fun DiagnosticBar(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    InfoGauge(
-                        canvasSize = 130.dp,
-                        indicatorValue = diagnosticInfo.audioLevel,
-                        maxIndicatorValue = 100,
-                        smallText = "Mic",
-                        foregroundIndicatorColor = CustomColours.GREEN,
-                        disabledText = "Muted",
-                        disabled = diagnosticInfo.muted
-                    )
-                    InfoGauge(
-                        canvasSize = 130.dp,
-                        indicatorValue = diagnosticInfo.detectionLevel,
-                        maxIndicatorValue = 10,
-                        decimalPlaces = 1,
-                        smallText = "Wake",
-                        foregroundIndicatorColor = if (diagnosticInfo.detectionLevel >= diagnosticInfo.detectionThreshold) CustomColours.GREEN else CustomColours.AMBER,
-                        disabledText = "Off",
-                        disabled = diagnosticInfo.wakeWord == "none"
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        InfoGauge(
+                            canvasSize = 130.dp,
+                            indicatorValue = diagnosticInfo.audioLevel,
+                            maxIndicatorValue = 100,
+                            smallText = "Mic",
+                            foregroundIndicatorColor = CustomColours.GREEN,
+                            disabledText = "Muted",
+                            disabled = diagnosticInfo.muted
+                        )
+                        MicrophoneChip(diagnosticInfo.activeMic)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        InfoGauge(
+                            canvasSize = 130.dp,
+                            indicatorValue = diagnosticInfo.detectionLevel,
+                            maxIndicatorValue = 10,
+                            decimalPlaces = 1,
+                            smallText = "Wake",
+                            foregroundIndicatorColor = if (diagnosticInfo.detectionLevel >= diagnosticInfo.detectionThreshold) CustomColours.GREEN else CustomColours.AMBER,
+                            disabledText = "Off",
+                            disabled = diagnosticInfo.wakeWord == "none"
+                        )
+                        WakeWordChip(diagnosticInfo.wakeWord)
+                    }
                     if (diagnosticInfo.hasCamera && diagnosticInfo.motionDetectionMode != "none") {
                         MotionIndicator(diagnosticInfo)
                     }
@@ -97,30 +109,97 @@ fun DiagnosticBar(
                     }
                 }
                 Row {
-                    InfoGauge(
-                        indicatorValue = diagnosticInfo.audioLevel,
-                        maxIndicatorValue = 100,
-                        smallText = "Mic Level",
-                        foregroundIndicatorColor = CustomColours.GREEN,
-                        disabledText = "Muted",
-                        disabled = diagnosticInfo.muted
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        InfoGauge(
+                            indicatorValue = diagnosticInfo.audioLevel,
+                            maxIndicatorValue = 100,
+                            smallText = "Mic Level",
+                            foregroundIndicatorColor = CustomColours.GREEN,
+                            disabledText = "Muted",
+                            disabled = diagnosticInfo.muted
+                        )
+                        MicrophoneChip(diagnosticInfo.activeMic)
+                    }
 
-                    InfoGauge(
-                        indicatorValue = diagnosticInfo.detectionLevel,
-                        maxIndicatorValue = 10,
-                        decimalPlaces = 1,
-                        smallText = "Detection",
-                        foregroundIndicatorColor = if (diagnosticInfo.detectionLevel >= diagnosticInfo.detectionThreshold) CustomColours.GREEN else CustomColours.AMBER,
-                        disabledText = "Disabled",
-                        disabled = diagnosticInfo.wakeWord == "none"
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        InfoGauge(
+                            indicatorValue = diagnosticInfo.detectionLevel,
+                            maxIndicatorValue = 10,
+                            decimalPlaces = 1,
+                            smallText = "Detection",
+                            foregroundIndicatorColor = if (diagnosticInfo.detectionLevel >= diagnosticInfo.detectionThreshold) CustomColours.GREEN else CustomColours.AMBER,
+                            disabledText = "Disabled",
+                            disabled = diagnosticInfo.wakeWord == "none"
+                        )
+                        WakeWordChip(diagnosticInfo.wakeWord)
+                    }
                 }
 
                 Column(
                     modifier = Modifier.padding(start = 10.dp)
                 ) {
                     DiagnosticChips(diagnosticInfo)
+                }
+            }
+        }
+
+        if (diagnosticInfo.lastTranscript.isNotEmpty() || diagnosticInfo.lastResponse.isNotEmpty()) {
+            HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Last Request & Response",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.7f)
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+                ) {
+                    if (diagnosticInfo.lastTranscript.isNotEmpty()) {
+                        Text(
+                            text = "Request",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = labelColour,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        Text(
+                            text = diagnosticInfo.lastTranscript,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = labelColour
+                        )
+                    }
+                    if (diagnosticInfo.lastResponse.isNotEmpty()) {
+                        if (diagnosticInfo.lastTranscript.isNotEmpty()) Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Response",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = labelColour,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        Text(
+                            text = diagnosticInfo.lastResponse,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = labelColour
+                        )
+                    }
                 }
             }
         }
@@ -147,6 +226,42 @@ private fun MotionIndicator(diagnosticInfo: DiagnosticInfo) {
             text = if (isFaceMode) "Face" else "Motion",
             color = if (motionDetected) CustomColours.GREEN else Color.Gray,
             style = MaterialTheme.typography.bodyLarge
+        )
+    }
+}
+
+@Composable
+private fun MicrophoneChip(activeMic: String) {
+    if (activeMic.isNotEmpty() && activeMic != "None") {
+        AssistChip(
+            onClick = {},
+            label = {
+                Text(
+                    text = activeMic,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            },
+            colors = AssistChipDefaults.assistChipColors(
+                labelColor = Color.White,
+            )
+        )
+    }
+}
+
+@Composable
+private fun WakeWordChip(wakeWord: String) {
+    if (wakeWord.isNotEmpty() && wakeWord != "none") {
+        AssistChip(
+            onClick = {},
+            label = {
+                Text(
+                    text = wakeWord,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            },
+            colors = AssistChipDefaults.assistChipColors(
+                labelColor = Color.White,
+            )
         )
     }
 }
@@ -229,7 +344,11 @@ fun DiagnosticBarPreview() {
             hasCamera = true,
             lastMotionTimestamp = System.currentTimeMillis(),
             motionInterval = 10000,
-            motionDetectionMode = "face"
+            motionDetectionMode = "face",
+            activeMic = "Built-in Mic (Built-in Mic)",
+            wakeWord = "hey_assistant",
+            lastTranscript = "Turn on the living room lights",
+            lastResponse = "Okay, turning on the living room lights"
         )
     )
 }
@@ -247,7 +366,10 @@ fun DiagnosticBarPortraitPreview() {
             hasCamera = true,
             lastMotionTimestamp = System.currentTimeMillis(),
             motionInterval = 10000,
-            motionDetectionMode = "motion"
+            motionDetectionMode = "motion",
+            activeMic = "Built-in Mic (Built-in Mic)",
+            wakeWord = "hey_assistant",
+            lastTranscript = "What is the weather today?"
         )
     )
 }

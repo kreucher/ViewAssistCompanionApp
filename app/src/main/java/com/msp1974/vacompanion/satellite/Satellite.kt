@@ -11,11 +11,13 @@ import com.msp1974.vacompanion.device.Camera
 import com.msp1974.vacompanion.device.DeviceManager
 import com.msp1974.vacompanion.device.VolumeObserver
 import com.msp1974.vacompanion.ui.DiagnosticInfo
+import com.msp1974.vacompanion.audio.MicrophoneInput
 import com.msp1974.vacompanion.utils.Event
 import com.msp1974.vacompanion.utils.Helpers
 import com.msp1974.vacompanion.wakeword.AvailableWakeWords
 import com.msp1974.vacompanion.utils.EventListener
 import com.msp1974.vacompanion.utils.CustomFileDownloader
+import com.msp1974.vacompanion.utils.Helpers.Companion.capitalizeWords
 import com.msp1974.vacompanion.utils.SoundControl.Companion.isDoNotDisturbEnabled
 import com.msp1974.vacompanion.wakeword.WakeWordEngineProvider
 import com.msp1974.vacompanion.wyoming.EVENT_TYPE
@@ -83,6 +85,8 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
     private var audioPipeline: SatelliteAudioPipeline? = null
     private var audioPipelineId = AtomicInteger(0)
     private var audioPipelineLastStateChange = System.currentTimeMillis()
+    private var lastTranscript: String = ""
+    private var lastResponse: String = ""
 
     private var soundEffectFinishTime: Long = 0
     private var currentWakeWordSoundUri: android.net.Uri? = null
@@ -496,6 +500,19 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
                 }
             }
 
+            override fun onTranscript(text: String) {
+                lastTranscript = text
+                lastResponse = ""
+            }
+
+            override fun onResponse(text: String) {
+                lastResponse = text
+            }
+
+            override fun onError(text: String) {
+                lastResponse = "Error: $text"
+            }
+
         }.also {
             it.run(startStage)
         }
@@ -666,7 +683,6 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
     suspend fun startSensorMonitor() {
         sensorJob = scope.launch {
             deviceManager.sensors.collect { data ->
-                Timber.d("Sensors: $data")
                 val data = buildJsonObject {
                     put("timestamp", Date().toString())
                     putJsonObject("sensors") {
@@ -703,6 +719,7 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
     }
 
     fun sendDiagnostics(audioLevel: Float, detectionLevel: Float) {
+        val wakeWordName = if (config.wakeWord == "") "None" else config.wakeWord.replace("_", " ").capitalizeWords()
         if (config.diagnosticsEnabled) {
             val data = DiagnosticInfo(
                 show = config.diagnosticsEnabled,
@@ -710,7 +727,7 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
                 audioLevel = audioLevel * 100,
                 detectionLevel = detectionLevel * 10,
                 detectionThreshold = config.wakeWordThreshold * 10,
-                wakeWord = config.wakeWord,
+                wakeWord = wakeWordName,
                 mode = if (wakeWordHandler?.state != WakeWordHandlerState.RUNNING) {
                     AudioRouteOption.NONE
                 } else if (wakeWordHandler?.engine?.isStreaming() ?: false) {
@@ -718,7 +735,10 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
                 } else {
                     AudioRouteOption.DETECT
                 },
-                motionDetectionMode = config.motionDetectionMode
+                motionDetectionMode = config.motionDetectionMode,
+                activeMic = MicrophoneInput.activeMicInput,
+                lastTranscript = lastTranscript,
+                lastResponse = lastResponse
             )
             val event = Event("diagnosticStats", "", data)
             config.eventBroadcaster.notifyEvent(event)

@@ -65,6 +65,9 @@ interface IAudioPipeline {
     fun sendMessage(packet: WyomingPacket)
     fun onStateChange(state: PipelineStage)
     fun onFinish(reason: PipelineEndReason, continueConversation: Boolean)
+    fun onTranscript(text: String)
+    fun onResponse(text: String)
+    fun onError(text: String)
 }
 
 abstract class SatelliteAudioPipeline(
@@ -208,7 +211,7 @@ abstract class SatelliteAudioPipeline(
             WyomingEvent.VOICE_STOPPED -> handleVoiceStopped()
             WyomingEvent.TRANSCRIPT -> handleTranscript(packet)
             WyomingEvent.HANDLED -> handleHandled(packet)
-            WyomingEvent.SYNTHESIZE -> handleSynthesize()
+            WyomingEvent.SYNTHESIZE -> handleSynthesize(packet)
             WyomingEvent.AUDIO_START, WyomingEvent.AUDIO_CHUNK, WyomingEvent.AUDIO_STOP -> queueAudioMessage(packet)
             WyomingEvent.PIPELINE_ENDED -> handlePipelineEnded()
             WyomingEvent.ERROR -> handlePipelineError(packet)
@@ -294,8 +297,10 @@ abstract class SatelliteAudioPipeline(
     }
 
     internal fun handleTranscript(packet: WyomingPacket) {
+        val text = packet.getProp("text")
+        onTranscript(text)
         // Handle pipeline cancel words
-        if (isContinuation && packet.getProp("text").lowercase().replace(".", "") in CONTINUATION_STOP_WORDS) {
+        if (isContinuation && text.lowercase().replace(".", "") in CONTINUATION_STOP_WORDS) {
             stop()
             return
         }
@@ -315,7 +320,11 @@ abstract class SatelliteAudioPipeline(
         }
     }
 
-    internal fun handleSynthesize() {
+    internal fun handleSynthesize(packet: WyomingPacket) {
+        val text = packet.getProp("text")
+        if (text.isNotEmpty()) {
+            onResponse(text)
+        }
         if (pipelineStage != PipelineStage.STREAMING_TTS) {
             pipelineStage = PipelineStage.AWAITING_TTS
         }
@@ -394,6 +403,8 @@ abstract class SatelliteAudioPipeline(
     internal fun handlePipelineError(event: WyomingPacket) {
         val code = event.getProp("code")
         val text = event.getProp("text")
+
+        onError(text)
 
         val isDuplicateWakeUp = code == "duplicate_wake_up_detected"
 
