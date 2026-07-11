@@ -41,6 +41,7 @@ import javax.inject.Inject
 import androidx.core.net.toUri
 import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL_TIMEOUT
 import com.msp1974.vacompanion.device.sensors.SensorState
+import com.msp1974.vacompanion.utils.Helpers.Companion.capitalizeWords
 import com.msp1974.vacompanion.utils.WebViewGestureDetector
 
   class VADialog(
@@ -257,7 +258,7 @@ class VAViewModel @Inject constructor(
                     val wakeWord = event.newValue as String
                     currentState.copy(
                         diagnosticInfo = currentState.diagnosticInfo.copy(
-                            wakeWord = wakeWord,
+                            wakeWord = wakeWord.replace("_", " ").capitalizeWords(),
                         )
                     )
                 }

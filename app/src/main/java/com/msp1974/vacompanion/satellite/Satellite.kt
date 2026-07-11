@@ -728,6 +728,7 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
                 detectionLevel = detectionLevel * 10,
                 detectionThreshold = config.wakeWordThreshold * 10,
                 wakeWord = wakeWordName,
+                muted = config.isMuted,
                 mode = if (wakeWordHandler?.state != WakeWordHandlerState.RUNNING) {
                     AudioRouteOption.NONE
                 } else if (wakeWordHandler?.engine?.isStreaming() ?: false) {
