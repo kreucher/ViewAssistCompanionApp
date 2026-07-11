@@ -10,7 +10,7 @@ import android.webkit.*
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebSettingsCompat.DARK_STRATEGY_PREFER_WEB_THEME_OVER_USER_AGENT_DARKENING
 import androidx.webkit.WebViewFeature
-import com.msp1974.vacompanion.data.NetworkStatus
+import com.msp1974.vacompanion.device.sensors.NetworkStatus
 import com.msp1974.vacompanion.jsinterface.ViewAssistCallback
 import com.msp1974.vacompanion.jsinterface.WebAppInterface
 import com.msp1974.vacompanion.jsinterface.WebViewJavascriptInterface
@@ -144,7 +144,7 @@ class CustomWebView @JvmOverloads constructor(
 
     val externalAuthCallback = object : ExternalAuthCallback {
         override fun onRequestExternalAuth(view: WebView, payload: String) {
-            if (deviceManager.networkStatusManager.networkInfo.value.status == NetworkStatus.Available) {
+            if (deviceManager.networkStatus.value.status == NetworkStatus.Available) {
                 val json = Json { ignoreUnknownKeys = true }
                 val payloadJson = json.parseToJsonElement(payload).jsonObject
                 val forceRefresh = payloadJson["force"]?.jsonPrimitive?.boolean ?: false
@@ -157,7 +157,7 @@ class CustomWebView @JvmOverloads constructor(
             }
         }
         override fun onRequestRevokeExternalAuth(view: WebView) {
-            if (deviceManager.networkStatusManager.networkInfo.value.status == NetworkStatus.Available) {
+            if (deviceManager.networkStatus.value.status == NetworkStatus.Available) {
                 scope.launch {
                     deviceManager.authenticationManager.revokeSession()
                 }

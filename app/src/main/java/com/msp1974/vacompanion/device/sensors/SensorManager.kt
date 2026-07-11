@@ -1,7 +1,6 @@
 package com.msp1974.vacompanion.device.sensors
 
 import android.content.Context
-import android.content.res.Configuration
 import com.msp1974.vacompanion.device.DeviceManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -21,7 +20,7 @@ class SensorManager(
 ) {
 
     private val sensors = mutableListOf<Sensor>()
-    
+
     private val _sensorState = MutableStateFlow(SensorState())
     val sensorState: StateFlow<SensorState> = _sensorState.asStateFlow()
 
@@ -29,54 +28,34 @@ class SensorManager(
     val sensorUpdates: SharedFlow<Map<String, Any>> = _sensorUpdates.asSharedFlow()
 
     private val pendingUpdates = mutableMapOf<String, Any>()
-    private var lastOrientation = ""
+    private val pendingStateUpdates = mutableMapOf<String, Any>()
     
-    private var intervalJob: Job? = null
+    private var batchJob: Job? = null
 
     init {
         setupSensors()
-        startPeriodicUpdates()
     }
 
     private fun setupSensors() {
         val config = deviceManager.config
         val deviceInfo = deviceManager.deviceInfo
 
-        // Light Sensor
-        val lightSensor = LightSensor()
-        if (lightSensor.hasSensor(context)) {
-            addSensor(lightSensor)
-        }
-
-        // Temperature Sensor
-        val tempSensor = TemperatureSensor()
-        if (tempSensor.hasSensor(context)) {
-            addSensor(tempSensor)
-        }
-
-        // Proximity Sensor
-        val isRawProximity = deviceInfo.hardware.proximitySensorType == "raw"
-        val proximitySensor = ProximitySensor(
-            isRaw = isRawProximity,
-            threshold = config.rawProximitySensorThreshold.toFloat()
+        val sensors = mapOf<String, Sensor>(
+            "light" to LightSensor(context),
+            "temperature" to TemperatureSensor(context),
+            "proximity" to ProximitySensor(context, deviceInfo.hardware.proximitySensorType == "raw", config.rawProximitySensorThreshold.toFloat()),
+            "accelerometer" to AccelerometerSensor(context, config),
+            "battery" to BatterySensor(context),
+            "orientation" to OrientationSensor(context),
+            "network" to NetworkSensor(context),
+            "mic_input" to MicInputSensor(context),
         )
-        if (proximitySensor.hasSensor(context)) {
-            addSensor(proximitySensor)
-        }
 
-        // Accelerometer Sensor (Bump detection)
-        val accelSensor = AccelerometerSensor(
-            eventBroadcaster = config.eventBroadcaster,
-            bumpSensitivity = config.bumpSensitivity
-        )
-        if (accelSensor.hasSensor(context)) {
-            addSensor(accelSensor)
-        }
-
-        // Battery Sensor
-        val batterySensor = BatterySensor(hasBattery = deviceInfo.hardware.hasBattery)
-        if (batterySensor.hasSensor(context)) {
-            addSensor(batterySensor)
+        // Start sensors
+        for (sensor in sensors) {
+            if (sensor.value.hasSensor(context)) {
+                addSensor(sensor.value)
+            }
         }
     }
 
@@ -89,73 +68,72 @@ class SensorManager(
 
     private fun handleSensorUpdate(id: String, data: Any) {
         synchronized(pendingUpdates) {
-            if (data is BatteryState) {
-                pendingUpdates.putAll(data.toMap())
-                pendingUpdates["battery_level"] = data.level
-                pendingUpdates["battery_charging"] = data.isCharging
-            } else {
-                pendingUpdates[id] = data
+            when (data) {
+                is BatteryState -> {
+                    pendingUpdates.putAll(data.toMap())
+                    pendingUpdates["battery_level"] = data.level
+                    pendingUpdates["battery_charging"] = data.isCharging
+                }
+                is AccelerometerState -> {
+                    pendingUpdates.putAll(data.toMap())
+                }
+                is MicInputState -> {
+                    pendingUpdates.putAll(data.toMap())
+                }
+                is NetworkState -> {
+                    pendingUpdates.putAll(data.toMap())
+                }
+                else -> {
+                    pendingUpdates[id] = data
+                }
             }
+            pendingStateUpdates[id] = data
         }
 
-        _sensorState.update { currentState ->
-            when (id) {
-                "light" -> currentState.copy(light = data as Float)
-                "proximity" -> currentState.copy(proximity = data as Float)
-                "temperature" -> currentState.copy(temperature = data as Float)
-                "battery" -> currentState.copy(battery = data as BatteryState)
-                else -> currentState
+        if (batchJob == null || batchJob?.isActive != true) {
+            batchJob = deviceManager.deviceManagerScope.launch {
+                delay(1.seconds)
+                processBatchedUpdates()
             }
         }
     }
 
-    private fun startPeriodicUpdates() {
-        intervalJob?.cancel()
-        intervalJob = deviceManager.deviceManagerScope.launch {
-            while (true) {
-                updateSensors()
-                delay(5.seconds)
-            }
-        }
-    }
-
-    private suspend fun updateSensors() {
-        sensors.forEach { it.requestSensorUpdate(context) }
-        
-        // Orientation check
-        val currentOrientation = getOrientation()
-        if (currentOrientation != lastOrientation) {
-            lastOrientation = currentOrientation
-            synchronized(pendingUpdates) {
-                pendingUpdates["orientation"] = currentOrientation
-            }
-            _sensorState.update { it.copy(orientation = currentOrientation) }
-        }
-
-        // Emit and clear pending updates
+    private suspend fun processBatchedUpdates() {
         val updates = synchronized(pendingUpdates) {
-            if (pendingUpdates.isNotEmpty()) {
-                val copy = pendingUpdates.toMap()
-                pendingUpdates.clear()
-                copy
-            } else null
+            val u = if (pendingUpdates.isNotEmpty()) pendingUpdates.toMap() else null
+            val s = if (pendingStateUpdates.isNotEmpty()) pendingStateUpdates.toMap() else null
+            pendingUpdates.clear()
+            pendingStateUpdates.clear()
+            u to s
         }
-        
-        updates?.let { 
+
+        updates.second?.let { sMap ->
+            _sensorState.update { currentState ->
+                var nextState = currentState
+                sMap.forEach { (id, data) ->
+                    nextState = when (id) {
+                        "light" -> nextState.copy(light = data as Float)
+                        "proximity" -> nextState.copy(proximity = data as Float)
+                        "temperature" -> nextState.copy(temperature = data as Float)
+                        "battery" -> nextState.copy(battery = data as BatteryState)
+                        "accelerometer" -> nextState.copy(accelerometer = data as AccelerometerState)
+                        "orientation" -> nextState.copy(orientation = data as String)
+                        "network" -> nextState.copy(network = data as NetworkState)
+                        "mic_input" -> nextState.copy(micInput = data as MicInputState)
+                        else -> nextState
+                    }
+                }
+                nextState
+            }
+        }
+
+        updates.first?.let {
             _sensorUpdates.emit(it)
         }
     }
 
-    private fun getOrientation(): String {
-        return if (context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-            "portrait"
-        } else {
-            "landscape"
-        }
-    }
-
     fun stop() {
-        intervalJob?.cancel()
+        batchJob?.cancel()
         sensors.forEach { it.stop() }
     }
 }

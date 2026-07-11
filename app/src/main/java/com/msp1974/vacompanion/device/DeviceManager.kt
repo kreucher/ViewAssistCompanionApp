@@ -1,11 +1,10 @@
 package com.msp1974.vacompanion.device
 
 import android.content.Context
-import com.msp1974.vacompanion.data.NetworkInfo
-import com.msp1974.vacompanion.data.NetworkStatusManager
 import com.msp1974.vacompanion.device.authentication.AuthenticationManager
 import com.msp1974.vacompanion.device.authentication.Token
 import com.msp1974.vacompanion.device.info.DeviceInfo
+import com.msp1974.vacompanion.device.sensors.NetworkState
 import com.msp1974.vacompanion.device.sensors.SensorManager
 import com.msp1974.vacompanion.device.sensors.SensorState
 import com.msp1974.vacompanion.settings.APPConfig
@@ -19,7 +18,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,7 +28,7 @@ data class WyomingServerStatus(
 )
 
 data class Status(
-    val network: NetworkInfo = NetworkInfo(),
+    val network: NetworkState = NetworkState(),
     val wyoming: WyomingServerStatus = WyomingServerStatus(),
     val sensors: SensorState = SensorState(),
     val sessionToken: Token? = null,
@@ -52,13 +50,12 @@ class DeviceManager @Inject constructor(
 
     val config: APPConfig = APPConfig(context)
     val deviceInfo: DeviceInfo = DeviceInfo(context)
-    val networkStatusManager: NetworkStatusManager = NetworkStatusManager(context)
     val sensorsManager = SensorManager(context, this)
     val authenticationManager: AuthenticationManager = AuthenticationManager(config)
 
     // Network status handling
-    private val _networkStatus = MutableStateFlow(NetworkInfo())
-    val networkStatus: StateFlow<NetworkInfo> = _networkStatus.asStateFlow()
+    private val _networkStatus = MutableStateFlow(NetworkState())
+    val networkStatus: StateFlow<NetworkState> = _networkStatus.asStateFlow()
 
     // Server (Wyoming) connection status handling
     private val _serverStatus = MutableStateFlow(WyomingServerStatus())
@@ -79,17 +76,14 @@ class DeviceManager @Inject constructor(
     }
 
     private fun runListeners() {
-        deviceManagerScope.launch {
-            networkStatusManager.networkInfo.collect { info ->
-                _networkStatus.value = info
-                _status.update { it.copy(network = info) }
-            }
-        }
-        
         // Collect full state for internal Status (UI)
         deviceManagerScope.launch {
             sensorsManager.sensorState.collect { state ->
                 _status.update { it.copy(sensors = state) }
+                state.network?.let { info ->
+                    _networkStatus.value = info
+                    _status.update { it.copy(network = info) }
+                }
             }
         }
 

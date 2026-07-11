@@ -3,7 +3,6 @@ package com.msp1974.vacompanion.service
 import android.content.Context
 import com.msp1974.vacompanion.data.AvailableAlarms
 import com.msp1974.vacompanion.data.AvailableWakeSounds
-import com.msp1974.vacompanion.data.NetworkStatusManager
 import com.msp1974.vacompanion.device.DeviceManager
 import com.msp1974.vacompanion.wakeword.AvailableWakeWords
 import com.msp1974.vacompanion.wyoming.ServerState
@@ -20,7 +19,6 @@ internal class BackgroundTaskController (private val context: Context, val devic
     private val scope = CoroutineScope(Dispatchers.Default + job)
     private var server: WyomingTCPServer? = null
     private val config = deviceManager.config
-    private val deviceInfo = deviceManager.deviceInfo
 
 
     fun start() {

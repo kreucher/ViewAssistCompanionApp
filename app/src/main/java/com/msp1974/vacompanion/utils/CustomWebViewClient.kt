@@ -23,7 +23,6 @@ import timber.log.Timber
 import java.net.URL
 import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
-import com.msp1974.vacompanion.data.NetworkStatus
 import com.msp1974.vacompanion.device.authentication.IAuthenticationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -32,27 +31,14 @@ import kotlinx.coroutines.withContext
 class CustomWebViewClient(val viewModel: VAViewModel): WebViewClientCompat()  {
     val log = Logger()
     val config = viewModel.deviceManager.config
-    //val networkStatusManager = viewModel.deviceManager.networkStatusManager
     private val firebase = FirebaseManager.getInstance(config.context)
     private val resources = viewModel.resources
-    //private var networkStatus = NetworkStatus.Available
 
     companion object {
 
         private const val APP_PREFIX = "app://"
         private const val INTENT_PREFIX = "intent:"
         private const val ERROR_URL = "file:///android_asset/web/error.html"
-    }
-
-    init {
-        /*
-        viewModel.viewModelScope.launch {
-            networkStatusManager.networkStatus.collect {
-                networkStatus = it.status
-            }
-        }
-
-         */
     }
 
     override fun onRenderProcessGone(

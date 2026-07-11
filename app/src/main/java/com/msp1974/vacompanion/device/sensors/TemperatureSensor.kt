@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import kotlin.math.abs
 
-class TemperatureSensor : Sensor, SensorEventListener {
+class TemperatureSensor(context: Context) : Sensor, SensorEventListener {
 
     companion object {
         private var isListenerRegistered = false
@@ -26,15 +26,25 @@ class TemperatureSensor : Sensor, SensorEventListener {
         )
     }
 
-    private var mySensorManager: SensorManager? = null
+    private var mySensorManager: SensorManager? = context.getSystemService(SENSOR_SERVICE) as SensorManager
     override var onUpdate: ((String, Any) -> Unit)? = null
+
+    init {
+        val sensor = mySensorManager?.getDefaultSensor(AndroidSensor.TYPE_AMBIENT_TEMPERATURE)
+        if (sensor != null && !isListenerRegistered) {
+            mySensorManager?.registerListener(this, sensor, SENSOR_DELAY_NORMAL)
+            isListenerRegistered = true
+            listenerLastRegistered = System.currentTimeMillis()
+            Timber.d("Temperature sensor listener registered in init")
+        }
+    }
 
     override fun hasSensor(context: Context): Boolean {
         val sm = context.getSystemService(SENSOR_SERVICE) as SensorManager
         return sm.getDefaultSensor(AndroidSensor.TYPE_AMBIENT_TEMPERATURE) != null
     }
 
-    override fun requiredPermissions(context: Context, sensorId: String): Array<String> {
+    override fun requiredPermissions(): Array<String> {
         return emptyArray()
     }
 
@@ -43,23 +53,7 @@ class TemperatureSensor : Sensor, SensorEventListener {
     }
 
     override suspend fun requestSensorUpdate(context: Context) {
-        val now = System.currentTimeMillis()
-        if (mySensorManager == null) {
-            mySensorManager = context.getSystemService(SENSOR_SERVICE) as SensorManager
-        }
-
-        if (isListenerRegistered && (listenerLastRegistered + Sensor.SENSOR_LISTENER_TIMEOUT < now)) {
-            mySensorManager?.unregisterListener(this)
-            isListenerRegistered = false
-        }
-
-        val sensor = mySensorManager?.getDefaultSensor(AndroidSensor.TYPE_AMBIENT_TEMPERATURE)
-        if (sensor != null && !isListenerRegistered) {
-            mySensorManager?.registerListener(this, sensor, SENSOR_DELAY_NORMAL)
-            isListenerRegistered = true
-            listenerLastRegistered = now
-            Timber.d("Temperature sensor listener registered")
-        }
+        // No-op: Monitoring is handled by listener registered in init
     }
 
     override fun onAccuracyChanged(sensor: AndroidSensor?, accuracy: Int) {}
