@@ -104,24 +104,25 @@ abstract class SatelliteWakeWorkHandler(val context: Context, val deviceManager:
     suspend fun stop() {
         if (wakeWordJob != null && wakeWordJob!!.isActive) {
             state = WakeWordHandlerState.STOPPING
-            wakeWordJob?.cancel()
-            wakeWordJob = null
-        }
 
-        try {
-            withTimeout(200.milliseconds) {
-                withContext(Dispatchers.Default) {
-                    while (state != WakeWordHandlerState.STOPPED) {
-                        delay(10.milliseconds)
+            try {
+                withTimeout(200.milliseconds) {
+                    withContext(Dispatchers.Default) {
+                        wakeWordJob?.cancel()
+                        while (wakeWordJob!!.isActive) {
+                            delay(10.milliseconds)
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Timber.e("Error waiting for wake word detection to stop: ${e.message.toString()}")
+            } finally {
+                engine = null
+                wakeWordJob = null
+                state = WakeWordHandlerState.STOPPED
+                onDiagnostics(0f, 0f)
+                Timber.d("Wake word detection stopped")
             }
-        } catch (e: Exception) {
-            Timber.e("Error waiting for wake word detection to stop: ${e.message.toString()}")
-        } finally {
-            engine = null
-            onDiagnostics(0f, 0f)
-            Timber.d("Wake word detection stopped")
         }
     }
 
