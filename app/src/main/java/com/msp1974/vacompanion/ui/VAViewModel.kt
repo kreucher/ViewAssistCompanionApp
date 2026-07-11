@@ -41,6 +41,7 @@ import javax.inject.Inject
 import androidx.core.net.toUri
 import com.msp1974.vacompanion.device.MotionDetectionEngine.Companion.MOTION_INTERVAL_TIMEOUT
 import com.msp1974.vacompanion.device.sensors.SensorState
+import com.msp1974.vacompanion.satellite.AudioLogEntry
 import com.msp1974.vacompanion.utils.Helpers.Companion.capitalizeWords
 import com.msp1974.vacompanion.utils.WebViewGestureDetector
 
@@ -94,8 +95,7 @@ data class DiagnosticInfo(
     var motionInterval: Int = 10000,
     var motionDetectionMode: String = "motion",
     var activeMic: String = "",
-    var lastTranscript: String = "",
-    var lastResponse: String = ""
+    var audioLog: MutableMap<Long, AudioLogEntry> = mutableMapOf()
 )
 
 

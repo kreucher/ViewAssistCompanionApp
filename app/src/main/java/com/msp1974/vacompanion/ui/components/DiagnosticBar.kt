@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.ExpandLess
@@ -19,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -143,7 +144,7 @@ fun DiagnosticBar(
             }
         }
 
-        if (diagnosticInfo.lastTranscript.isNotEmpty() || diagnosticInfo.lastResponse.isNotEmpty()) {
+        if (diagnosticInfo.audioLog.isNotEmpty()) {
             HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
             Row(
                 modifier = Modifier
@@ -154,8 +155,8 @@ fun DiagnosticBar(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Last Request & Response",
-                    style = MaterialTheme.typography.labelMedium,
+                    text = "Audio Log",
+                    style = MaterialTheme.typography.labelLarge,
                     color = Color.White.copy(alpha = 0.7f)
                 )
                 Icon(
@@ -169,36 +170,52 @@ fun DiagnosticBar(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
                         .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
                 ) {
-                    if (diagnosticInfo.lastTranscript.isNotEmpty()) {
-                        Text(
-                            text = "Request",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = labelColour,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Text(
-                            text = diagnosticInfo.lastTranscript,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = labelColour
-                        )
-                    }
-                    if (diagnosticInfo.lastResponse.isNotEmpty()) {
-                        if (diagnosticInfo.lastTranscript.isNotEmpty()) Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Response",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = labelColour,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Text(
-                            text = diagnosticInfo.lastResponse,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = labelColour
-                        )
+                    diagnosticInfo.audioLog.toSortedMap(compareByDescending { it }).forEach { entry ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Column 1: Timestamp (Top Aligned)
+                            Text(
+                                text = entry.value.timestamp,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = labelColour.copy(alpha = 0.5f),
+                                modifier = Modifier.width(80.dp)
+                            )
+
+                            // Column 2: Request and Response (Left Aligned)
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                if (entry.value.request.isNotEmpty()) {
+                                    Text(
+                                        text = entry.value.request,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = labelColour
+                                    )
+                                }
+                                if (entry.value.response.isNotEmpty()) {
+                                    Text(
+                                        text = entry.value.response,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = labelColour.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                        }
+                        if (entry.key != diagnosticInfo.audioLog.keys.first()) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 4.dp),
+                                color = Color.White.copy(alpha = 0.05f)
+                            )
+                        }
                     }
                 }
             }
@@ -238,7 +255,7 @@ private fun MicrophoneChip(activeMic: String) {
             label = {
                 Text(
                     text = activeMic,
-                    style = MaterialTheme.typography.labelSmall
+                    style = MaterialTheme.typography.labelMedium
                 )
             },
             colors = AssistChipDefaults.assistChipColors(
@@ -256,7 +273,7 @@ private fun WakeWordChip(wakeWord: String) {
             label = {
                 Text(
                     text = wakeWord,
-                    style = MaterialTheme.typography.labelSmall
+                    style = MaterialTheme.typography.labelMedium
                 )
             },
             colors = AssistChipDefaults.assistChipColors(
@@ -347,8 +364,13 @@ fun DiagnosticBarPreview() {
             motionDetectionMode = "face",
             activeMic = "Built-in Mic (Built-in Mic)",
             wakeWord = "hey_assistant",
-            lastTranscript = "Turn on the living room lights",
-            lastResponse = "Okay, turning on the living room lights"
+            audioLog = mutableMapOf(1L to
+                com.msp1974.vacompanion.satellite.AudioLogEntry(
+                    timestamp = "12:00:00",
+                    request = "Turn on the living room lights",
+                    response = "Okay, turning on the living room lights"
+                )
+            )
         )
     )
 }
@@ -369,7 +391,13 @@ fun DiagnosticBarPortraitPreview() {
             motionDetectionMode = "motion",
             activeMic = "Built-in Mic (Built-in Mic)",
             wakeWord = "hey_assistant",
-            lastTranscript = "What is the weather today?"
+            audioLog = mutableMapOf(1L to
+                    com.msp1974.vacompanion.satellite.AudioLogEntry(
+                        timestamp = "12:00:00",
+                        request = "Turn on the living room lights",
+                        response = "Okay, turning on the living room lights"
+                    )
+            )
         )
     )
 }

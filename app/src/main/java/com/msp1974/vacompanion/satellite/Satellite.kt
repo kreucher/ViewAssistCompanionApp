@@ -65,6 +65,12 @@ interface ISatelliteEvent {
 
 enum class AudioRouteOption { NONE, DETECT, STREAM}
 
+data class AudioLogEntry(
+    val timestamp: String,
+    val request: String,
+    val response: String
+)
+
 
 abstract class Satellite(var context: Context, val deviceManager: DeviceManager, val scope: CoroutineScope, clientIdString: String): ISatelliteEvent, EventListener {
 
@@ -85,8 +91,6 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
     private var audioPipeline: SatelliteAudioPipeline? = null
     private var audioPipelineId = AtomicInteger(0)
     private var audioPipelineLastStateChange = System.currentTimeMillis()
-    private var lastTranscript: String = ""
-    private var lastResponse: String = ""
 
     private var soundEffectFinishTime: Long = 0
     private var currentWakeWordSoundUri: android.net.Uri? = null
@@ -101,6 +105,8 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
             config.isRunning = value == SatelliteState.RUNNING
         }
     private var volumeObserver: VolumeObserver? = null
+
+    var audioRequestResponseLog: MutableMap<Long, AudioLogEntry> = mutableMapOf()
 
     suspend fun start() {
         // Add config change listeners
@@ -500,17 +506,12 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
                 }
             }
 
-            override fun onTranscript(text: String) {
-                lastTranscript = text
-                lastResponse = ""
-            }
+            override fun onAudioLog(timestamp: Long, audioLogEntry: AudioLogEntry) {
+                if (audioRequestResponseLog.size >= 15) {
+                    audioRequestResponseLog.remove(audioRequestResponseLog.keys.first())
+                }
 
-            override fun onResponse(text: String) {
-                lastResponse = text
-            }
-
-            override fun onError(text: String) {
-                lastResponse = "Error: $text"
+                audioRequestResponseLog[timestamp] = audioLogEntry
             }
 
         }.also {
@@ -738,8 +739,7 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
                 },
                 motionDetectionMode = config.motionDetectionMode,
                 activeMic = MicrophoneInput.activeMicInput,
-                lastTranscript = lastTranscript,
-                lastResponse = lastResponse
+                audioLog = audioRequestResponseLog
             )
             val event = Event("diagnosticStats", "", data)
             config.eventBroadcaster.notifyEvent(event)
