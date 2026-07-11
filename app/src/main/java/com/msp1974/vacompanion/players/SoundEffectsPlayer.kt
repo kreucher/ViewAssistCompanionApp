@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.C.USAGE_NOTIFICATION
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -21,7 +20,7 @@ class SoundEffectsPlayer(val context: Context) {
     val state: StateFlow<Int> = _state
 
     val audioAttributes: AudioAttributes = AudioAttributes.Builder()
-        .setUsage(USAGE_NOTIFICATION)
+        .setUsage(C.USAGE_NOTIFICATION)
         .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
         .build()
 
