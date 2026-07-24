@@ -17,8 +17,10 @@ class LightSensor(context: Context) : Sensor, SensorEventListener {
     companion object {
         private var isListenerRegistered = false
         private var listenerLastRegistered = 0L
-        private const val UPDATE_PERCENTAGE = 0.1f // 10%
+        private const val UPDATE_PERCENTAGE = 0.25f // 25%
         private var sensorLastValue = -1f
+        private const val MAX_UPDATE_INTERVAL_MS = 5000L
+        private var lastUpdateTimestamp = 0L
 
         internal val basicSensor = Sensor.BasicSensor(
             "light",
@@ -64,11 +66,20 @@ class LightSensor(context: Context) : Sensor, SensorEventListener {
         val threshold = if (sensorLastValue >= 0) sensorLastValue * UPDATE_PERCENTAGE else -1f
 
         if (sensorLastValue < 0 || (delta > threshold && delta > 0)) {
+            if (sensorLastValue >= 0 && !isUpdateIntervalElapsed()) {
+                return
+            }
+
             sensorLastValue = value
+            lastUpdateTimestamp = System.currentTimeMillis()
             Sensor.sensorWorkerScope.launch {
                 onSensorUpdated(basicSensor.id, value)
             }
         }
+    }
+
+    private fun isUpdateIntervalElapsed(): Boolean {
+        return (System.currentTimeMillis() - lastUpdateTimestamp) >= MAX_UPDATE_INTERVAL_MS
     }
 
     override fun stop() {
