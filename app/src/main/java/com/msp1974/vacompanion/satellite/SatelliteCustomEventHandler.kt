@@ -83,14 +83,9 @@ class SatelliteCustomEventHandler(
             "musicVolume" -> {
                 volumeManager.setVolume(AudioManager.STREAM_MUSIC, event.newValue as Int)
             }
-            "wakeWord", "wakeWordSound", "wakeWordThreshold", "wakeWordEngine", "useVoiceEnhancer", "useAdvancedGain" -> {
+            "wakeWord", "wakeWordSound", "wakeWordThreshold", "wakeWordEngine" -> {
                 scope.launch {
                     satellite.restartWakeWordDetection()
-                }
-            }
-            "wakeWordTrigger" -> {
-                scope.launch {
-                    satellite.handleWakeWordDetection()
                 }
             }
             "recognitionError" -> {
