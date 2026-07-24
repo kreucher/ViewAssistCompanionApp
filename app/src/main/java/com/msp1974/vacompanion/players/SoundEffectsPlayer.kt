@@ -21,7 +21,7 @@ class SoundEffectsPlayer(val context: Context) {
 
     val audioAttributes: AudioAttributes = AudioAttributes.Builder()
         .setUsage(C.USAGE_NOTIFICATION)
-        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
         .build()
 
     suspend fun preload(uri: Uri) {
