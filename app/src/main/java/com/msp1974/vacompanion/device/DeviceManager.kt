@@ -51,7 +51,7 @@ class DeviceManager @Inject constructor(
     val config: APPConfig = APPConfig(context)
     val deviceInfo: DeviceInfo = DeviceInfo(context)
     val sensorsManager = SensorManager(context, this)
-    val authenticationManager: AuthenticationManager = AuthenticationManager(config)
+    val authenticationManager: AuthenticationManager = AuthenticationManager(this.config)
 
     // Network status handling
     private val _networkStatus = MutableStateFlow(NetworkState())
@@ -68,8 +68,6 @@ class DeviceManager @Inject constructor(
     // Status class to hold all connection-related states - includes full sensor state
     private val _status = MutableStateFlow(Status())
     val status: StateFlow<Status> = _status.asStateFlow()
-
-    val isActive = _serverStatus.value.connected && _serverStatus.value.satelliteRunning
 
     init {
         runListeners()

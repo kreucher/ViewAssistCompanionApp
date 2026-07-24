@@ -374,7 +374,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
                     webView.setZoomLevel(config.zoomLevel)
                     config.screenOn = screen.isScreenOn()
                     val url = deviceManager.authenticationManager.getHAUrl()
-                    log.d("Satellite started -> loading URL: $url")
+                    Timber.d("Satellite started -> loading URL: $url")
                     webView.loadUrl(url)
                 }
                 BroadcastSender.SATELLITE_CLIENT_UPDATED -> {
@@ -510,7 +510,7 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
         if ( config.backgroundTaskStatus != BackgroundTaskStatus.NOT_STARTED ) {
             log.w("Background task already running.  Not starting from MainActivity")
             firebaseManager?.logEvent(FirebaseManager.MAIN_ACTIVITY_BACKGROUND_TASK_ALREADY_RUNNING, mapOf())
-            if (config.isRunning) {
+            if (viewModel.vacaState.value.satelliteRunning) {
                 webView.setZoomLevel(config.zoomLevel)
                 val url = deviceManager.authenticationManager.getHAUrl()
                 log.d("Run background tasks -> loading URL: $url")

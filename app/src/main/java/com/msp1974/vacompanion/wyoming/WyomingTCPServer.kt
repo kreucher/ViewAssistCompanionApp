@@ -352,14 +352,18 @@ abstract class WyomingTCPServer(private val context: Context, val deviceManager:
                 ) {
                     sendMessage(clientId, type, data, payload)
                 }
-            }.also {
+            }.also { newSatellite ->
                 unregisterNSD()
-                scope.launch { it.start() }
+                scope.launch { newSatellite.start() }
                 if (satelliteStatusListenerJob != null && satelliteStatusListenerJob!!.isActive) {
                     satelliteStatusListenerJob!!.cancel()
                 }
+                // Collect directly off newSatellite (not the `satellite` field) - the field
+                // assignment below only lands once this whole `.also` block returns, so a
+                // field read here could race it and (rarely) observe the previous satellite
+                // or null, leaving WyomingServerStatus.satelliteRunning stuck stale.
                 satelliteStatusListenerJob = scope.launch {
-                    satellite?.satelliteState?.collect { _ ->
+                    newSatellite.satelliteState.collect { _ ->
                         updateStatus()
                     }
                 }
