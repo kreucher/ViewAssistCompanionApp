@@ -10,6 +10,7 @@ import androidx.datastore.core.Closeable
 import androidx.lifecycle.application
 import androidx.lifecycle.viewModelScope
 import com.msp1974.vacompanion.R
+import com.msp1974.vacompanion.audio.AudioDSP
 import com.msp1974.vacompanion.broadcasts.BroadcastSender
 import com.msp1974.vacompanion.device.sensors.NetworkStatus
 import com.msp1974.vacompanion.settings.APPConfig
@@ -83,7 +84,7 @@ data class DiagnosticInfo(
     var show: Boolean = false,
     var engine: String = "",
     var muted: Boolean = false,
-    var audioLevel: Float = 0f,
+    var audioLevel: Float = AudioDSP.AUDIO_LEVEL_FLOOR_DBFS,
     var detectionThreshold: Float = 0f,
     var detectionLevel: Float = 0f,
     var mode: AudioRouteOption = AudioRouteOption.NONE,
@@ -95,6 +96,7 @@ data class DiagnosticInfo(
     var motionInterval: Int = 10000,
     var motionDetectionMode: String = "motion",
     var activeMic: String = "",
+    var recordingWakewordEnabled: Boolean = false,
     var audioLog: MutableMap<Long, AudioLogEntry> = mutableMapOf()
 )
 
@@ -117,6 +119,9 @@ data class State(
     var orientation: Int = Configuration.ORIENTATION_LANDSCAPE,
 
     var launchOnBoot: Boolean = true,
+    // Single source of truth for "is the satellite running" on the UI side - mirrors
+    // WyomingServerStatus.satelliteRunning (itself derived from Satellite.state) and is
+    // what MainActivity's Compose tree keys off to decide whether to show WebViewScreen.
     var satelliteRunning: Boolean = false,
     var darkMode: Boolean = false,
     var isDND: Boolean = false,
@@ -162,11 +167,11 @@ class VAViewModel @Inject constructor(
     init {
         _vacaState.value = State()
 
+        //TODO: put under device manager
         network.setWifiLock()
 
         config.eventBroadcaster.addListener(this)
         initValues()
-        buildAppInfo()
 
         viewModelScope.launch {
             deviceManager.status.collect { status ->
@@ -220,6 +225,8 @@ class VAViewModel @Inject constructor(
                 )
             )
         }
+
+        buildAppInfo()
     }
 
     override fun close() {
@@ -246,7 +253,7 @@ class VAViewModel @Inject constructor(
                 _vacaState.update { currentState ->
                     currentState.copy(
                         diagnosticInfo = currentState.diagnosticInfo.copy(
-                            audioLevel = 0f,
+                            audioLevel = AudioDSP.AUDIO_LEVEL_FLOOR_DBFS,
                             detectionLevel = 0f,
                             mode = if (isMuted || config.wakeWord == "none") AudioRouteOption.NONE else AudioRouteOption.DETECT
                         )
@@ -285,6 +292,15 @@ class VAViewModel @Inject constructor(
                     currentState.copy(
                         diagnosticInfo = _vacaState.value.diagnosticInfo.copy(
                             show = event.newValue as Boolean
+                        )
+                    )
+                }
+            }
+            "recordingWakewordEnabled" -> {
+                _vacaState.update { currentState ->
+                    currentState.copy(
+                        diagnosticInfo = currentState.diagnosticInfo.copy(
+                            recordingWakewordEnabled = event.newValue as Boolean
                         )
                     )
                 }
@@ -440,6 +456,10 @@ class VAViewModel @Inject constructor(
 
     fun hideSystemUI() {
         config.eventBroadcaster.notifyEvent(Event("hideSystemUI", "", ""))
+    }
+
+    fun onEvent(event: Event) {
+        config.eventBroadcaster.notifyEvent(event)
     }
 
     private fun buildAppInfo() {

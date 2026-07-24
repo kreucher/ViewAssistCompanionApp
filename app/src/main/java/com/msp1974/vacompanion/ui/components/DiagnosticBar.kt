@@ -14,6 +14,8 @@ import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,16 +26,30 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.msp1974.vacompanion.audio.AudioEnhancer
+import com.msp1974.vacompanion.audio.AutomaticGainController
 import com.msp1974.vacompanion.ui.DiagnosticInfo
 import com.msp1974.vacompanion.ui.theme.CustomColours
 import com.msp1974.vacompanion.satellite.AudioRouteOption
+import com.msp1974.vacompanion.utils.Event
 import java.lang.System
+
+/**
+ * Mic level gauge range: centred on the -18 dBFS AGC target with enough
+ * headroom either side to show the full range reachable via `mic_gain`
+ * (-10..10, i.e. -28..-8 dBFS target), capped at 0 dBFS (full scale).
+ */
+private const val MIC_LEVEL_GAUGE_MARGIN_DB = 10f
+private const val MIC_LEVEL_GAUGE_MIN_DBFS =
+    AutomaticGainController.BASE_TARGET_LEVEL_DBFS + AudioEnhancer.MIC_GAIN_MIN_DB - MIC_LEVEL_GAUGE_MARGIN_DB
+private const val MIC_LEVEL_GAUGE_MAX_DBFS = 0f
 
 
 @SuppressLint("DefaultLocale")
 @Composable
 fun DiagnosticBar(
     diagnosticInfo: DiagnosticInfo,
+    onEvent: (com.msp1974.vacompanion.utils.Event) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val configuration = LocalConfiguration.current
@@ -67,7 +83,10 @@ fun DiagnosticBar(
                         InfoGauge(
                             canvasSize = 130.dp,
                             indicatorValue = diagnosticInfo.audioLevel,
-                            maxIndicatorValue = 100,
+                            minIndicatorValue = MIC_LEVEL_GAUGE_MIN_DBFS,
+                            maxIndicatorValue = MIC_LEVEL_GAUGE_MAX_DBFS,
+                            decimalPlaces = 1,
+                            bigTextSuffix = "dB",
                             smallText = "Mic",
                             foregroundIndicatorColor = CustomColours.GREEN,
                             disabledText = "Muted",
@@ -79,7 +98,7 @@ fun DiagnosticBar(
                         InfoGauge(
                             canvasSize = 130.dp,
                             indicatorValue = diagnosticInfo.detectionLevel,
-                            maxIndicatorValue = 10,
+                            maxIndicatorValue = 10f,
                             decimalPlaces = 1,
                             smallText = "Wake",
                             foregroundIndicatorColor = if (diagnosticInfo.detectionLevel >= diagnosticInfo.detectionThreshold) CustomColours.GREEN else CustomColours.AMBER,
@@ -92,7 +111,7 @@ fun DiagnosticBar(
                         MotionIndicator(diagnosticInfo)
                     }
                 }
-                DiagnosticChips(diagnosticInfo)
+                DiagnosticChips(diagnosticInfo, onEvent)
             }
         } else {
             Row(
@@ -113,7 +132,10 @@ fun DiagnosticBar(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         InfoGauge(
                             indicatorValue = diagnosticInfo.audioLevel,
-                            maxIndicatorValue = 100,
+                            minIndicatorValue = MIC_LEVEL_GAUGE_MIN_DBFS,
+                            maxIndicatorValue = MIC_LEVEL_GAUGE_MAX_DBFS,
+                            decimalPlaces = 1,
+                            bigTextSuffix = "dB",
                             smallText = "Mic Level",
                             foregroundIndicatorColor = CustomColours.GREEN,
                             disabledText = "Muted",
@@ -125,7 +147,7 @@ fun DiagnosticBar(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         InfoGauge(
                             indicatorValue = diagnosticInfo.detectionLevel,
-                            maxIndicatorValue = 10,
+                            maxIndicatorValue = 10f,
                             decimalPlaces = 1,
                             smallText = "Detection",
                             foregroundIndicatorColor = if (diagnosticInfo.detectionLevel >= diagnosticInfo.detectionThreshold) CustomColours.GREEN else CustomColours.AMBER,
@@ -139,7 +161,7 @@ fun DiagnosticBar(
                 Column(
                     modifier = Modifier.padding(start = 10.dp)
                 ) {
-                    DiagnosticChips(diagnosticInfo)
+                    DiagnosticChips(diagnosticInfo, onEvent)
                 }
             }
         }
@@ -194,6 +216,13 @@ fun DiagnosticBar(
                                 modifier = Modifier.weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
+                                if (entry.value.wakeWord.isNotEmpty()) {
+                                    Text(
+                                        text = "${entry.value.wakeWord} (${entry.value.maxScore})",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = labelColour
+                                    )
+                                }
                                 if (entry.value.request.isNotEmpty()) {
                                     Text(
                                         text = entry.value.request,
@@ -205,7 +234,27 @@ fun DiagnosticBar(
                                     Text(
                                         text = entry.value.response,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = labelColour.copy(alpha = 0.7f)
+                                        color = labelColour.copy(alpha = 0.7f),
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
+                            }
+                            if (entry.value.audioFilePath != null) {
+                                IconButton(
+                                    onClick = {
+                                        onEvent(
+                                            Event(
+                                                "playRecording", "",
+                                                entry.key
+                                            )
+                                        )
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (entry.value.isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                        contentDescription = if (entry.value.isPlaying) "Stop" else "Play",
+                                        tint = if (entry.value.isPlaying) CustomColours.AMBER else CustomColours.GREEN
                                     )
                                 }
                             }
@@ -284,7 +333,7 @@ private fun WakeWordChip(wakeWord: String) {
 }
 
 @Composable
-private fun DiagnosticChips(diagnosticInfo: DiagnosticInfo) {
+private fun DiagnosticChips(diagnosticInfo: DiagnosticInfo, onEvent: (com.msp1974.vacompanion.utils.Event) -> Unit = {}) {
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val labelColour = Color.White
@@ -317,6 +366,16 @@ private fun DiagnosticChips(diagnosticInfo: DiagnosticInfo) {
                     labelColor = labelColour
                 )
             )
+            AssistChip(
+                onClick = {
+                    onEvent(com.msp1974.vacompanion.utils.Event("toggleRecording", "", ""))
+                },
+                label = { Text("Record Audio") },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = if (diagnosticInfo.recordingWakewordEnabled) CustomColours.AMBER else Color.Transparent,
+                    labelColor = labelColour
+                )
+            )
         }
     } else {
         Column {
@@ -343,6 +402,16 @@ private fun DiagnosticChips(diagnosticInfo: DiagnosticInfo) {
                     labelColor = labelColour
                 )
             )
+            AssistChip(
+                onClick = {
+                    onEvent(com.msp1974.vacompanion.utils.Event("toggleRecording", "", ""))
+                },
+                label = { Text("Record Audio") },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = if (diagnosticInfo.recordingWakewordEnabled) CustomColours.AMBER else Color.Transparent,
+                    labelColor = labelColour
+                )
+            )
         }
     }
 }
@@ -353,7 +422,7 @@ fun DiagnosticBarPreview() {
     DiagnosticBar(
         modifier = Modifier.background(Color.White),
         diagnosticInfo = DiagnosticInfo(
-            audioLevel = 50f,
+            audioLevel = -18f,
             detectionLevel = 8.1f,
             detectionThreshold = 5f,
             vadDetection = true,
@@ -367,6 +436,8 @@ fun DiagnosticBarPreview() {
             audioLog = mutableMapOf(1L to
                 com.msp1974.vacompanion.satellite.AudioLogEntry(
                     timestamp = "12:00:00",
+                    wakeWord = "hey_assistant",
+                    maxScore = 8.1f,
                     request = "Turn on the living room lights",
                     response = "Okay, turning on the living room lights"
                 )
@@ -381,7 +452,7 @@ fun DiagnosticBarPortraitPreview() {
     DiagnosticBar(
         modifier = Modifier.background(Color.White),
         diagnosticInfo = DiagnosticInfo(
-            audioLevel = 30f,
+            audioLevel = -24f,
             detectionLevel = 2.5f,
             detectionThreshold = 5f,
             motionDetected = false,
@@ -394,6 +465,8 @@ fun DiagnosticBarPortraitPreview() {
             audioLog = mutableMapOf(1L to
                     com.msp1974.vacompanion.satellite.AudioLogEntry(
                         timestamp = "12:00:00",
+                        wakeWord = "hey_assistant",
+                        maxScore = 8.1f,
                         request = "Turn on the living room lights",
                         response = "Okay, turning on the living room lights"
                     )

@@ -51,6 +51,8 @@ class OpenWakeWordEngine(
     private val slidingWindowSize = 3
     private val probabilities = ArrayDeque<Float>(slidingWindowSize)
 
+    private val lastScores = mutableMapOf<String, Float>()
+
     /**
      * Flow of wake word detection events.
      *
@@ -155,7 +157,7 @@ class OpenWakeWordEngine(
         else flow {
             val wakeWords = activeWakeWords
             val audioSource = if(isAndroidThings) VACAAudioFormat.FALLBACK_AUDIO_SOURCE else VACAAudioFormat.DEFAULT_AUDIO_SOURCE
-            val microphoneInput = MicrophoneInput(config, audioSource, frameSize = 1280)
+            val microphoneInput = MicrophoneInput(config, audioSource)
             try {
                 microphoneInput.start()
                 emit(AudioResult.EngineStatus("Started"))
@@ -169,7 +171,7 @@ class OpenWakeWordEngine(
                             emit(AudioResult.AudioLevel(AudioDSP().audioLevel(audio)))
                         }
 
-                        if (isStreaming) {
+                        if (isStreaming || config.recordingWakewordEnabled) {
                             val a = AudioDSP().floatArrayToByteBuffer(audio)
                             emit(
                                 AudioResult.Audio(
@@ -181,11 +183,13 @@ class OpenWakeWordEngine(
 
                         val detections = processAudio(audio, frameTimestamp)
                         for (detection in detections) {
-                            if (detection.score > 0.1f) {
+                            val lastScore = lastScores[detection.wakeWordId] ?: 0f
+                            if (detection.score > 0.1f || lastScore > 0.1f) {
                                 if (detection.wakeWordId in wakeWords) {
                                     emit(AudioResult.WakeDetected(detection.copy(timestamp = frameTimestamp)))
                                 }
                             }
+                            lastScores[detection.wakeWordId] = detection.score
                         }
                     }
                     yield()
@@ -210,17 +214,15 @@ class OpenWakeWordEngine(
             modelProcessors.map { (wakeWordWithId, processor) ->
                 try {
                     val score = processor.process(audioFeatures)
-                    if (score > 0.1) {
-                        detections.add(
-                            WakeWordDetection(
-                                wakeWordWithId.id,
-                                wakeWordWithId.wakeWord.wake_word,
-                                isWakeWordDetected(score),
-                                score,
-                                timestamp = timestamp
-                            )
+                    detections.add(
+                        WakeWordDetection(
+                            wakeWordWithId.id,
+                            wakeWordWithId.wakeWord.wake_word,
+                            isWakeWordDetected(score),
+                            score,
+                            timestamp = timestamp
                         )
-                    }
+                    )
                 } catch (e: RuntimeException) {
                     throw e
                 } catch (e: Exception) {

@@ -36,6 +36,8 @@ open class MicroWakeWordEngine (
     private val _availableWakeWords = availableWakeWords.associateBy { it.id }
     private val _availableStopWords = availableStopWords.associateBy { it.id }
 
+    private val lastScores = mutableMapOf<String, Float>()
+
     private val detector: MicroWakeWordDetector? = null
 
     private val _activeWakeWords = MutableStateFlow(activeWakeWords)
@@ -67,66 +69,68 @@ open class MicroWakeWordEngine (
         if (it) emptyFlow()
         else flow {
             val audioSource = if(isAndroidThings) VACAAudioFormat.FALLBACK_AUDIO_SOURCE else VACAAudioFormat.DEFAULT_AUDIO_SOURCE
-            val microphoneInput = MicrophoneInput(config, audioSource)
-            var wakeWords = activeWakeWords.value
-            var stopWords = activeStopWords.value
+                val microphoneInput = MicrophoneInput(config, audioSource)
+                var wakeWords = activeWakeWords.value
+                var stopWords = activeStopWords.value
 
-            try {
-                var detector = createDetector(wakeWords, stopWords)
-                microphoneInput.start()
-                emit(AudioResult.EngineStatus("Started"))
-                while (true) {
-                    if (wakeWords != activeWakeWords.value || stopWords != activeStopWords.value) {
-                        wakeWords = activeWakeWords.value
-                        stopWords = activeStopWords.value
-                        detector.close()
-                        detector = createDetector(wakeWords, stopWords)
-                    }
-
-                    val audio = microphoneInput.readBytes()
-                    val frameTimestamp = System.currentTimeMillis()
-
-                    if (config.diagnosticsEnabled) {
-                        val audioByteString = ByteString.copyFrom(audio)
-                        audio.rewind()
-                        emit(AudioResult.AudioLevel(AudioDSP().audioLevel(audioByteString.toByteArray())))
-                    }
-
-                    // Emit audio result even if not streaming so that the controller can maintain a rolling history buffer
-                    if (isStreaming) {
-                        emit(
-                            AudioResult.Audio(
-                                ByteString.copyFrom(audio),
-                                timestamp = frameTimestamp
-                            )
-                        )
-                        audio.rewind()
-                    }
-
-                    // Always run audio through the models, even if not currently streaming, to keep
-                    // their internal state up to date
-                    val detections = detector.detect(audio)
-                    for (detection in detections) {
-                        if (detection.score > 0.1f) {
-                            if (detection.wakeWordId in wakeWords) {
-                                emit(AudioResult.WakeDetected(detection.copy(timestamp = frameTimestamp)))
-                            } else if (detection.wakeWordId in stopWords) {
-                                emit(AudioResult.StopDetected(detection.copy(timestamp = frameTimestamp)))
-                            }
+                try {
+                    var detector = createDetector(wakeWords, stopWords)
+                    microphoneInput.start()
+                    emit(AudioResult.EngineStatus("Started"))
+                    while (true) {
+                        if (wakeWords != activeWakeWords.value || stopWords != activeStopWords.value) {
+                            wakeWords = activeWakeWords.value
+                            stopWords = activeStopWords.value
+                            detector.close()
+                            detector = createDetector(wakeWords, stopWords)
                         }
-                    }
 
-                    // yield to ensure upstream emissions and
-                    // cancellation have a chance to occur
-                    yield()
+                        val audio = microphoneInput.readBytes()
+                        val frameTimestamp = System.currentTimeMillis()
+
+                        if (config.diagnosticsEnabled) {
+                            val audioByteString = ByteString.copyFrom(audio)
+                            audio.rewind()
+                            emit(AudioResult.AudioLevel(AudioDSP().audioLevel(audioByteString.toByteArray())))
+                        }
+
+                        // Emit audio result even if not streaming so that the controller can maintain a rolling history buffer
+                        if (isStreaming || config.recordingWakewordEnabled) {
+                            emit(
+                                AudioResult.Audio(
+                                    ByteString.copyFrom(audio),
+                                    timestamp = frameTimestamp
+                                )
+                            )
+                            audio.rewind()
+                        }
+
+                        // Always run audio through the models, even if not currently streaming, to keep
+                        // their internal state up to date
+                        val detections = detector.detect(audio)
+                        for (detection in detections) {
+                            val lastScore = lastScores[detection.wakeWordId] ?: 0f
+                            if (detection.score > 0.1f || lastScore > 0.1f) {
+                                if (detection.wakeWordId in wakeWords) {
+                                    emit(AudioResult.WakeDetected(detection.copy(timestamp = frameTimestamp)))
+                                } else if (detection.wakeWordId in stopWords) {
+                                    emit(AudioResult.StopDetected(detection.copy(timestamp = frameTimestamp)))
+                                }
+                            }
+                            lastScores[detection.wakeWordId] = detection.score
+                        }
+
+                        // yield to ensure upstream emissions and
+                        // cancellation have a chance to occur
+                        yield()
+                    }
+                } finally {
+                    Timber.i("Stopping MicroWakeWordEngine")
+                    microphoneInput.close()
+                    detector?.close()
+                    emit(AudioResult.EngineStatus("Stopped"))
                 }
-            } finally {
-                Timber.i("Stopping MicroWakeWordEngine")
-                microphoneInput.close()
-                detector?.close()
-                emit(AudioResult.EngineStatus("Stopped"))
             }
-        }
     }
 
     private suspend fun createDetector(

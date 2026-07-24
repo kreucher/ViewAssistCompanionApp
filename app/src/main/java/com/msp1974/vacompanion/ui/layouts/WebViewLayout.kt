@@ -98,6 +98,7 @@ fun WebViewScreen (webView: CustomWebView, vaViewModel: VAViewModel = viewModel(
         if (vaUiState.diagnosticInfo.show) {
             DiagnosticBar(
                 vaUiState.diagnosticInfo,
+                onEvent = { vaViewModel.onEvent(it) },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
         }

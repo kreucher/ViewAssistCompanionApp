@@ -31,7 +31,7 @@ enum class WakeWordHandlerState {
 
 interface IWakeWordHandler {
     fun onStateChange(state: WakeWordHandlerState)
-    suspend fun onAudio(audio: WakeWordEngineProvider.AudioResult.Audio)
+    suspend fun onAudio(audio: WakeWordEngineProvider.AudioResult.Audio, streamAudio: Boolean)
     suspend fun onWakeWordDetected(detection: WakeWordEngineProvider.WakeWordDetection)
 
     suspend fun onStopWordDetected(detection: WakeWordEngineProvider.WakeWordDetection)
@@ -172,9 +172,7 @@ abstract class SatelliteWakeWorkHandler(val context: Context, val deviceManager:
 
                 is WakeWordEngineProvider.AudioResult.Audio -> {
                     if (it.audio.size() > 0) {
-                        if (engine!!.isStreaming()) {
-                            onAudio(it)
-                        }
+                        onAudio(it, engine!!.isStreaming())
                     }
                 }
 

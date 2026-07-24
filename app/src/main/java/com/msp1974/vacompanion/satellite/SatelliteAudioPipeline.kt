@@ -27,10 +27,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import timber.log.Timber
-import java.time.LocalDate
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeFormatter.ISO_LOCAL_TIME
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -68,16 +64,21 @@ enum class PipelineEndReason {
 interface IAudioPipeline {
     fun sendMessage(packet: WyomingPacket)
     fun onStateChange(state: PipelineStage)
-    fun onFinish(reason: PipelineEndReason, continueConversation: Boolean)
 
-    fun onAudioLog(timestamp: Long, audioLogEntry: AudioLogEntry)
+    fun onRequestTranscript(pipelineId: Long, text: String)
+
+    fun onResponseTranscript(pipelineId: Long, text: String)
+
+    fun onErrorMessage(pipelineId: Long, text: String)
+
+    fun onFinish(reason: PipelineEndReason, continueConversation: Boolean)
 }
 
 abstract class SatelliteAudioPipeline(
     val context: Context,
     val scope: CoroutineScope,
     val config: APPConfig,
-    val pipelineId: Int,
+    val pipelineId: Long,
     val mediaManager: SatelliteMediaManager,
 ): IAudioPipeline {
 
@@ -89,9 +90,7 @@ abstract class SatelliteAudioPipeline(
     private var pipelineRunning = CompletableDeferred<PipelineEndReason>()
     private var audioInMessageQueue = Channel<WyomingPacket>(capacity = 1000)
     private var audioOutQueue = Channel<WakeWordEngineProvider.AudioResult.Audio>(capacity = 1000)
-    private var pipelineStartTimestamp: Long = System.currentTimeMillis()
-    private var audioPipelineStartTimeText: String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
-    private var lastTranscript = ""
+    private var lastRequestTranscript = ""
     private var result: PipelineEndReason = PipelineEndReason.NONE
     private var shouldContinueConversation = config.continueConversation
     var stageStartTime: Long = System.currentTimeMillis()
@@ -304,8 +303,8 @@ abstract class SatelliteAudioPipeline(
 
     internal fun handleTranscript(packet: WyomingPacket) {
         val text = packet.getProp("text")
-        lastTranscript = text
-        onAudioLog(pipelineStartTimestamp, AudioLogEntry(audioPipelineStartTimeText, lastTranscript, ""))
+        lastRequestTranscript = text
+        onRequestTranscript(pipelineId, text)
         // Handle pipeline cancel words
         if (isContinuation && text.lowercase().replace(".", "") in CONTINUATION_STOP_WORDS) {
             stop()
@@ -330,7 +329,7 @@ abstract class SatelliteAudioPipeline(
     internal fun handleSynthesize(packet: WyomingPacket) {
         val text = packet.getProp("text")
         if (text.isNotEmpty()) {
-            onAudioLog(pipelineStartTimestamp, AudioLogEntry(audioPipelineStartTimeText, lastTranscript, text))
+            onResponseTranscript(pipelineId, text)
         }
         if (pipelineStage != PipelineStage.STREAMING_TTS) {
             pipelineStage = PipelineStage.AWAITING_TTS
@@ -411,14 +410,7 @@ abstract class SatelliteAudioPipeline(
         val code = event.getProp("code")
         val text = event.getProp("text")
 
-        onAudioLog(
-            pipelineStartTimestamp,
-            AudioLogEntry(
-                audioPipelineStartTimeText,
-                if (lastTranscript.isEmpty()) text else lastTranscript,
-                if (lastTranscript.isNotEmpty()) text else ""
-            )
-        )
+        onErrorMessage(pipelineId, text)
 
         val isDuplicateWakeUp = code == "duplicate_wake_up_detected"
 

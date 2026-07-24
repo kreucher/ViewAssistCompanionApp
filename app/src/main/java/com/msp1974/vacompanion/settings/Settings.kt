@@ -179,6 +179,10 @@ class APPConfig @Inject constructor(val context: Context) {
         onValueChangedListener(property, oldValue, newValue)
     }
 
+    var recordingWakewordEnabled: Boolean by Delegates.observable(false) { property, oldValue, newValue ->
+        onValueChangedListener(property, oldValue, newValue)
+    }
+
     var pairedDeviceID: String by Delegates.observable(pairedDeviceId) { property, oldValue, newValue ->
         pairedDeviceId = newValue
         onValueChangedListener(property, oldValue, newValue)
