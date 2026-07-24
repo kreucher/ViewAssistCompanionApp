@@ -25,7 +25,6 @@ class   MicrophoneInput (
     val sampleRateInHz: Int = VACAAudioFormat.SAMPLE_RATE_HZ,
     val channelConfig: Int = VACAAudioFormat.CHANNELS,
     val audioFormat: Int = VACAAudioFormat.ENCODING,
-    val frameSize: Int = 0,
 ) : AutoCloseable {
 
     companion object {
@@ -52,6 +51,9 @@ class   MicrophoneInput (
     private var aec: AcousticEchoCanceler? = null
     private var ns: NoiseSuppressor? = null
     private var agc: AutomaticGainControl? = null
+    private var hasHardwareAgc = false
+    private var hasHardwareNoiseSuppressor = false
+    private val audioEnhancer = AudioEnhancer(sampleRateInHz)
 
     private var audioDSP = AudioDSP()
 
@@ -75,8 +77,9 @@ class   MicrophoneInput (
     private val bufferSize =
         AudioRecord.getMinBufferSize(sampleRateInHz, channelConfig, audioFormat)
 
-    val isRecording get() = audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING
-    val speex = SpeexProcessor(sampleRate = sampleRateInHz, frameSize = if (frameSize > 0) frameSize else bufferSize )
+    val isRecording
+        get() = audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING
+
 
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     fun start() {
@@ -87,7 +90,6 @@ class   MicrophoneInput (
         }
 
         if (!isRecording) {
-            Timber.d("Starting microphone with AGC=${agc != null}, AEC=${aec != null}, NS=${ns != null}")
             audioRecord?.startRecording()
         } else {
             Timber.w("Microphone already started")
@@ -103,18 +105,17 @@ class   MicrophoneInput (
         return buffer
     }
 
-    fun readShort(bufferSize: Int = VACAAudioFormat.DEFAULT_BUFFER_SIZE_IN_SHORTS, useSpeex: Boolean = true): ShortArray {
+    fun readShort(bufferSize: Int = VACAAudioFormat.DEFAULT_BUFFER_SIZE_IN_SHORTS, applyEnhancement: Boolean = true): ShortArray {
         val audioBuffer = ShortArray(bufferSize)
         val audioRecord = this.audioRecord ?: error("Microphone not started")
         val readCount = audioRecord.read(audioBuffer, 0, audioBuffer.size)
         if (readCount > 0) {
-            if (useSpeex && !AutomaticGainControl.isAvailable()) {
-                speex.echoSuppressionEnabled = false
-                speex.denoiseEnabled = false
-                speex.setMaxAGCGain(20f + (config.micGain * 1.95f))
-                return speex.processFrame(audioBuffer.copyOfRange(0, readCount))
+            val frame = audioBuffer.copyOfRange(0, readCount)
+            if (applyEnhancement && (audioEnhancer.agcEnabled || audioEnhancer.noiseSuppressionEnabled)) {
+                audioEnhancer.setMicGainDb(config.micGain.toFloat())
+                return audioEnhancer.processFrame(frame)
             }
-            return audioBuffer.copyOfRange(0, readCount)
+            return frame
         } else if (readCount < 0) {
             Timber.e("AudioRecord read error: $readCount")
         }
@@ -177,31 +178,40 @@ class   MicrophoneInput (
                     return
                 }
             }
+
+            // Explicitly handle SCO for older devices or specific headset behaviors
+            if (bluetoothDevice.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+                try {
+                    // Ensure speakerphone is off for SCO to work correctly
+                    if (audioManager.isSpeakerphoneOn) {
+                        audioManager.isSpeakerphoneOn = false
+                    }
+
+                    if (audioManager.mode != AudioManager.MODE_IN_COMMUNICATION) {
+                        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                    }
+
+                    if (!audioManager.isBluetoothScoOn) {
+                        Timber.d("Starting Bluetooth SCO")
+                        audioManager.startBluetoothSco()
+                        audioManager.isBluetoothScoOn = true
+                    }
+                    Timber.d("Bluetooth SCO state: ${audioManager.isBluetoothScoOn}, mode: ${audioManager.mode}")
+                } catch (e: Exception) {
+                    Timber.e(e, "Error starting Bluetooth SCO")
+                }
+            }
+
             Timber.d("Setting preferred microphone: ${bluetoothDevice.productName}")
             val success = currentRecord.setPreferredDevice(bluetoothDevice)
             Timber.d("setPreferredDevice success: $success")
 
             activeMicInput = "${bluetoothDevice.productName}"
-
-            // Explicitly handle SCO for older devices or specific headset behaviors
-            if (bluetoothDevice.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-                try {
-                    audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                    audioManager.startBluetoothSco()
-                    audioManager.isBluetoothScoOn = true
-                    Timber.d("Bluetooth SCO started and mode set to IN_COMMUNICATION")
-                } catch (e: Exception) {
-                    Timber.e(e, "Error starting Bluetooth SCO")
-                }
-            }
         } else {
-            Timber.d("Using built in microphone")
-            currentRecord.setPreferredDevice(null)
-
             val builtInMic = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
             activeMicInput = builtInMic?.let { "${it.productName} (Built-in Mic)" } ?: "Built-in Mic"
 
-            if (audioManager.isBluetoothScoOn) {
+            if (audioManager.isBluetoothScoOn || audioManager.mode == AudioManager.MODE_IN_COMMUNICATION) {
                 audioManager.isBluetoothScoOn = false
                 audioManager.stopBluetoothSco()
                 audioManager.mode = AudioManager.MODE_NORMAL
@@ -210,27 +220,51 @@ class   MicrophoneInput (
         }
     }
 
-    private fun setupAudioEffects() {
+    private fun setupAudioEffects(attachAec: Boolean = true, attachNs: Boolean = true, attachAgc: Boolean = true) {
         val sessionId = audioRecord?.audioSessionId ?: return
 
-        // Catch if issue with audio enhancements and do not load them
-        if (UnsupportedFunctionsDevice.isIssueDevice(FunctionClasses.AUDIO_ENHANCEMENTS)) return
+        // Catch if issue with audio enhancements and do not load any platform effects -
+        // the software AudioEnhancer below still covers AGC/NS on these devices.
+        val skipHardwareEffects = UnsupportedFunctionsDevice.isIssueDevice(FunctionClasses.AUDIO_ENHANCEMENTS)
 
-        try {
-            if (AutomaticGainControl.isAvailable()) {
-                agc = AutomaticGainControl.create(sessionId)
-                agc?.enabled = true
-            }
-            if (AcousticEchoCanceler.isAvailable()) {
-                aec = AcousticEchoCanceler.create(sessionId)
-                aec?.enabled = true
+        if (!skipHardwareEffects) {
+            if (attachAgc && AutomaticGainControl.isAvailable()) {
+                try {
+                    agc = AutomaticGainControl.create(sessionId)?.apply { enabled = true }
+                } catch (e: Exception) {
+                    Timber.w("Failed to attach hardware AGC: ${e.message}")
+                }
             }
 
-            if (NoiseSuppressor.isAvailable()) {
-                ns = NoiseSuppressor.create(sessionId)
-                ns?.enabled = true
+            if (attachAec && AcousticEchoCanceler.isAvailable()) {
+                try {
+                    aec = AcousticEchoCanceler.create(sessionId)?.apply { enabled = true }
+                } catch (e: Exception) {
+                    Timber.w("Failed to attach hardware echo canceler: ${e.message}")
+                }
             }
-        } catch (e: Exception) {}
+
+            if (attachNs && NoiseSuppressor.isAvailable()) {
+                try {
+                    ns = NoiseSuppressor.create(sessionId)?.apply { enabled = true }
+                } catch (e: Exception) {
+                    Timber.w("Failed to attach hardware noise suppressor: ${e.message}")
+                }
+            }
+        }
+
+        // Use the software equivalent only for whichever effect(s) this device
+        // doesn't actually provide in hardware - not an all-or-nothing fallback.
+        hasHardwareAgc = agc?.enabled == true
+        hasHardwareNoiseSuppressor = ns?.enabled == true
+        audioEnhancer.agcEnabled = attachAgc && !hasHardwareAgc
+        audioEnhancer.noiseSuppressionEnabled = attachNs && !hasHardwareNoiseSuppressor
+        audioEnhancer.reset()
+
+        Timber.d(
+            "Audio enhancement - AGC: ${if (hasHardwareAgc) "hardware" else "software"}, " +
+                    "AEC: ${if (aec?.enabled == true) "hardware" else "unavailable"}, NS: ${if (hasHardwareNoiseSuppressor) "hardware" else "software"}"
+        )
     }
 
     override fun close() {
