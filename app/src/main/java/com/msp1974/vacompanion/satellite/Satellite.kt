@@ -139,7 +139,7 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
 
         customFilesLoader()
 
-        volumeObserver = VolumeObserver(context) { musicVolume, notificationVolume ->
+        volumeObserver = VolumeObserver(context) { musicVolume, notificationVolume, alarmVolume ->
             if (config.musicVolume != musicVolume) {
                 config.musicVolume = musicVolume
                 sendSetting("music_volume", musicVolume)
@@ -148,6 +148,11 @@ abstract class Satellite(var context: Context, val deviceManager: DeviceManager,
             if (config.notificationVolume != notificationVolume) {
                 config.notificationVolume = notificationVolume
                 sendSetting("notification_volume", notificationVolume)
+            }
+
+            if (config.alarmVolume != alarmVolume) {
+                config.alarmVolume = alarmVolume
+                sendSetting("alarm_volume", alarmVolume)
             }
         }
         volumeObserver?.register()

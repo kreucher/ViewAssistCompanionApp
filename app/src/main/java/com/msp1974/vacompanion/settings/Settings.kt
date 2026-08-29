@@ -139,6 +139,10 @@ class APPConfig @Inject constructor(val context: Context) {
         onValueChangedListener(property, oldValue, newValue)
     }
 
+    var alarmVolume: Int by Delegates.observable(DEFAULT_ALARM_VOLUME) { property, oldValue, newValue ->
+        onValueChangedListener(property, oldValue, newValue)
+    }
+
     var duckingVolume: Int by Delegates.observable(DEFAULT_DUCKING_VOLUME) { property, oldValue, newValue ->
         onValueChangedListener(property, oldValue, newValue)
     }
@@ -333,6 +337,7 @@ class APPConfig @Inject constructor(val context: Context) {
         settings["raw_proximity_threshold"]?.jsonPrimitive?.intOrNull?.let { rawProximitySensorThreshold = it }
         settings["notification_volume"]?.jsonPrimitive?.floatOrNull?.let { notificationVolume = it.toInt() }
         settings["music_volume"]?.jsonPrimitive?.floatOrNull?.let { musicVolume = it.toInt() }
+        settings["alarm_volume"]?.jsonPrimitive?.floatOrNull?.let { alarmVolume = it.toInt() }
         settings["ducking_volume"]?.jsonPrimitive?.floatOrNull?.let { duckingVolume = it.toInt() }
         settings["mic_gain"]?.jsonPrimitive?.intOrNull?.let { micGain = it }
         settings["mute"]?.jsonPrimitive?.booleanOrNull?.let { isMuted = it }
@@ -413,6 +418,7 @@ class APPConfig @Inject constructor(val context: Context) {
         const val DEFAULT_WAKE_WORD_THRESHOLD = 0.6f
         const val DEFAULT_NOTIFICATION_VOLUME = 10
         const val DEFAULT_MUSIC_VOLUME = 10
+        const val DEFAULT_ALARM_VOLUME = 10
         const val DEFAULT_SCREEN_BRIGHTNESS = 0.5f
         const val DEFAULT_SCREEN_AUTO_BRIGHTNESS = true
         const val DEFAULT_DUCKING_VOLUME = 2
