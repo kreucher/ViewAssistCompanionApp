@@ -16,7 +16,6 @@ import com.msp1974.vacompanion.jsinterface.WebAppInterface
 import com.msp1974.vacompanion.jsinterface.WebViewJavascriptInterface
 import com.msp1974.vacompanion.settings.PageLoadingStage
 import com.msp1974.vacompanion.device.DeviceManager
-import com.msp1974.vacompanion.device.authentication.AuthenticationException
 import com.msp1974.vacompanion.jsinterface.ExternalAuthCallback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -124,20 +123,25 @@ class CustomWebView @JvmOverloads constructor(
         }
     }
 
-    suspend fun requestAuthorisation(forceRefresh: Boolean = false) {
+    suspend fun requestAuthorisation(forceRefresh: Boolean = false, view: WebView = this) {
         try {
             if (config.refreshToken != "") {
                 deviceManager.authenticationManager.ensureValidSession(forceRefresh)
                 withContext(Dispatchers.Main) {
-                    callAuthJS()
+                    callAuthJS(view, true)
                 }
             } else {
                 withContext(Dispatchers.Main) {
-                    loadUrl(deviceManager.authenticationManager.getExternalAuthUrl())
+                    view.loadUrl(deviceManager.authenticationManager.getExternalAuthUrl())
                 }
             }
-        } catch (ex: AuthenticationException) {
-            Timber.e("Error authenticating with HA: ${ex.message}")
+        } catch (ex: Exception) {
+            Timber.e(ex, "Error authenticating with HA")
+            withContext(Dispatchers.Main) {
+                // Home Assistant's external-auth contract requires an explicit failure.
+                // Never inject the previous token after a failed refresh.
+                callAuthJS(view, false)
+            }
         }
     }
 
@@ -149,7 +153,7 @@ class CustomWebView @JvmOverloads constructor(
                 val payloadJson = json.parseToJsonElement(payload).jsonObject
                 val forceRefresh = payloadJson["force"]?.jsonPrimitive?.boolean ?: false
                 scope.launch {
-                    requestAuthorisation(forceRefresh)
+                    requestAuthorisation(forceRefresh, view)
                 }
             } else {
                 Timber.w("Requested authentication with HA while network was unavailable")
@@ -168,14 +172,16 @@ class CustomWebView @JvmOverloads constructor(
 
     }
 
-    private fun callAuthJS() {
-        evaluateJavascript(
+    private fun callAuthJS(view: WebView, success: Boolean) {
+        val script = if (success) {
             "window.externalAuthSetToken(true, {\n" +
-                    "\"access_token\": \"${config.accessToken}\",\n" +
-                    "\"expires_in\": ${((config.tokenExpiry - System.currentTimeMillis())/1000).toInt()}\n" +
-                    "});",
-            null
-        )
+                "\"access_token\": \"${config.accessToken}\",\n" +
+                "\"expires_in\": ${((config.tokenExpiry - System.currentTimeMillis()) / 1000).toInt().coerceAtLeast(0)}\n" +
+                "});"
+        } else {
+            "window.externalAuthSetToken(false);"
+        }
+        view.evaluateJavascript(script, null)
     }
 
     val ViewAssistEventHandler = object : ViewAssistCallback {
