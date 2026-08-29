@@ -647,19 +647,23 @@ class MainActivity : AppCompatActivity(), EventListener, ComponentCallbacks2 {
 
     fun setDarkMode(isDark: Boolean) {
         log.d("Setting dark mode: $isDark")
+        try {
+            if (isDark) {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            } else {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+            }
 
-        if (isDark) {
-            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-        } else{
-            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-        }
-
-        // Set device dark mode
-        val uiModeManager = getSystemService(UI_MODE_SERVICE) as UiModeManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            uiModeManager.setApplicationNightMode(if (isDark) UiModeManager.MODE_NIGHT_YES else UiModeManager.MODE_NIGHT_NO)
-        } else {
-            uiModeManager.nightMode = if (isDark) UiModeManager.MODE_NIGHT_YES else UiModeManager.MODE_NIGHT_NO
+            // Set device dark mode
+            val uiModeManager = getSystemService(UI_MODE_SERVICE) as UiModeManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                uiModeManager.setApplicationNightMode(if (isDark) UiModeManager.MODE_NIGHT_YES else UiModeManager.MODE_NIGHT_NO)
+            } else {
+                uiModeManager.nightMode =
+                    if (isDark) UiModeManager.MODE_NIGHT_YES else UiModeManager.MODE_NIGHT_NO
+            }
+        } catch (e: Exception) {
+            log.w("Error setting dark mode: ${e.message}")
         }
 
         webView.refreshDarkMode(isDark)
